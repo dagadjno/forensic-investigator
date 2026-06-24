@@ -95,6 +95,35 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "mft_lookup",
+        "description": "Resolve a file's full path and $SI/$FN MAC timestamps from the $MFT by filename "
+                       "(substring, case-insensitive). Use when you need a file's directory/path or "
+                       "creation/modification times other artifacts don't give — e.g. resolving a USN "
+                       "filename to its path, recovering a deleted file's path, or checking for timestomping "
+                       "($SI vs $FN mismatch). First call builds an index (~a few seconds); later calls are "
+                       "instant. Each result becomes a citable timeline row (source='mft').",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "filename or substring, e.g. 'launcher.exe'"},
+                "limit": {"type": "integer", "default": 20},
+            },
+            "required": ["filename"],
+        },
+    },
+    {
+        "name": "get_raw_event",
+        "description": "Get the FULL field set for a timeline row by its locator. Event-log summaries "
+                       "show only the top ~12 fields; if a summary ends with '[+N more fields — "
+                       "get_raw_event]', call this to see the rest (e.g. Hashes, IntegrityLevel, "
+                       "LogonId, OriginalFileName). The returned locator is citable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"locator": {"type": "string", "description": "a locator a tool returned to you"}},
+            "required": ["locator"],
+        },
+    },
+    {
         "name": "list_findings",
         "description": "List findings already recorded by you or other sub-agents (id, severity, technique, "
                        "title). Check this before recording so you add to an existing finding instead of duplicating it.",
@@ -279,6 +308,50 @@ def _check_evidence(ctx, evidence):
     return bad
 
 
+def _mft_lookup(ctx, args):
+    from ..extraction import mft
+    row = ctx.case.conn.execute("SELECT path FROM files WHERE name='$MFT' LIMIT 1").fetchone()
+    if row is None:
+        row = ctx.case.conn.execute("SELECT path FROM files WHERE path LIKE '%MFT' LIMIT 1").fetchone()
+    if row is None:
+        return "no $MFT present in this collection's file catalog", True
+    rel = row["path"]
+    limit = min(int(args.get("limit", 20)), 100)
+    results = mft.lookup(ctx.root / rel, args["filename"], limit)
+    out = []
+    for r in results:
+        loc = f"mft:{rel}:{r['record_no']}"
+        si, fn = r.get("si_times") or {}, r.get("fn_times") or {}
+        summary = (f"[MFT] {r['path']} | deleted={r['deleted']} size={r['size']} "
+                   f"SI(c={si.get('created')} m={si.get('modified')}) FN(c={fn.get('created')})")
+        if ctx.case.conn.execute("SELECT 1 FROM events WHERE locator=?", (loc,)).fetchone() is None:
+            ctx.case.add_event(source_artifact="mft", summary=summary[:600] + "  [+more fields — get_raw_event]",
+                               locator=loc, ts=(si.get("modified") or fn.get("modified") or ""),
+                               user="", event_type="mft:file", raw=json.dumps(r))
+            ctx.case.commit()
+        ctx.case.emit_locator(loc, "event")   # citable
+        out.append({"locator": loc, "path": r["path"], "deleted": r["deleted"],
+                    "size": r["size"], "si_times": si, "fn_times": fn})
+    return _ok({"query": args["filename"], "count": len(out), "results": out}), False
+
+
+def _get_raw_event(ctx, args):
+    loc = args["locator"]
+    row = ctx.case.conn.execute(
+        "SELECT summary, raw FROM events WHERE locator=?", (loc,)).fetchone()
+    if row is None:
+        return f"no timeline row with locator {loc}", True
+    ctx.case.emit_locator(loc, "event")   # make it citable
+    if not row["raw"]:
+        return _ok({"locator": loc, "note": "no extra stored fields for this row",
+                    "summary": row["summary"]}), False
+    try:
+        fields = json.loads(row["raw"])
+    except (json.JSONDecodeError, TypeError):
+        fields = row["raw"]
+    return _ok({"locator": loc, "fields": fields}), False
+
+
 def _list_findings(ctx, args):
     rows = ctx.case.findings_summary()
     out = [{"id": r["id"], "severity": r["severity"], "technique": r["attack_technique"],
@@ -367,6 +440,8 @@ _HANDLERS = {
     "grep_artifact": _grep_artifact,
     "list_files": _list_files,
     "read_file": _read_file,
+    "mft_lookup": _mft_lookup,
+    "get_raw_event": _get_raw_event,
     "list_findings": _list_findings,
     "record_finding": _record_finding,
     "answer_question": _answer_question,

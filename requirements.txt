@@ -10,6 +10,12 @@ python-evtx>=0.7
 # Registry-hive parsing (pure-Python).
 python-registry>=1.3
 
+# LNK / shortcut parsing (pure-Python).
+LnkParse3>=1.4
+
+# SRUM (SRUDB.dat is an ESE database) parsing — pure-Python ESE reader.
+dissect.esedb>=3.0
+
 # Optional LLM providers — install only the one(s) you use:
 #   pip install openai>=1.40           # for provider: openai
 #   pip install google-genai>=1.0      # for provider: gemini

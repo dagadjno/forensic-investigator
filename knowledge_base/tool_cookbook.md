@@ -13,9 +13,20 @@ already returned to you — never invent a locator.
   artifact type. Returns matching lines with a `locator`.
 - `read_file(path, offset=0, limit=200)` — read a slice of a parsed/text file by its
   catalog path. Use offset/limit; do not pull whole large files.
+- `get_raw_event(locator)` — get the FULL field set for a timeline row (event logs AND
+  registry). Summaries show only a few fields; if one ends with
+  `[+N more fields — get_raw_event]`, call this to see the rest — e.g. event-log `Hashes`,
+  `IntegrityLevel`, `LogonId`; or a registry service's full values (`Type`, `ObjectName`,
+  `Description`), an installed program's `InstallLocation`/`UninstallString`, or a
+  UserAssist entry's binary blob. Use it when a question needs a field the summary omitted.
 - `list_files(query=None)` — search the file-metadata catalog (every file, including
   binaries you cannot read). Returns path, owner, size, MAC timestamps. This is how
   you find candidate files to POINT at.
+- `mft_lookup(filename)` — resolve a file's full path and $SI/$FN MAC timestamps from the
+  $MFT by filename (the full MFT isn't bulk-parsed). Use when you need a path or timestamps
+  another artifact lacks — e.g. turning a USN filename into a full path, finding a deleted
+  file's path, or checking timestomping ($SI vs $FN mismatch). Results become citable
+  `source="mft"` timeline rows. First call takes a few seconds (index build), then instant.
 
 ## Record results
 - `list_findings()` — see findings already recorded (by you or other sub-agents). Check

@@ -31,7 +31,8 @@ Hard rules:
 
 
 # dir-code -> playbook filename (without .md) to point the sub-agent at.
-_PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry"}
+_PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry",
+              "Brw": "browser", "Lnk": "lnk", "RawData": "usn", "Sys": "srum"}
 
 
 def _system(case: CaseDB, host: str) -> str:

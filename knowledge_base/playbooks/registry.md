@@ -11,6 +11,11 @@ system). Cite the row `locator`.
 - `query_timeline(source="registry", contains="...")` — filter by category tag,
   program name, username, path, etc.
 - `grep_artifact(pattern, source="registry")` — regex across registry summaries.
+- Summaries show only the headline values. If one ends with `[+N more fields —
+  get_raw_event]`, the underlying key has more (e.g. a service's `Type`/`ObjectName`/
+  `Description`, an installed program's `InstallLocation`/`UninstallString`/`InstallDate`,
+  or a UserAssist entry's binary run-count/last-run blob). Call `get_raw_event(locator)`
+  for the complete field set.
 
 ## What's captured & why it matters
 - **persistence** — Run/RunOnce keys (SOFTWARE + per-user NTUSER). Attacker autostart.
@@ -33,5 +38,11 @@ often live in `activity` (RunMRU/TypedPaths), `execution` (UserAssist), `softwar
 `osinfo` (RegisteredOwner/Organization). If the answer is in a value you can read,
 cite it; if it points to a file you cannot read, POINT at that file instead.
 
+## Amcache (also parsed here)
+The Amcache hive in this tree is parsed too, but emitted under `source="amcache"` —
+program-execution evidence with **SHA1 hashes**. For execution/hash questions, also
+`query_timeline(source="amcache", ...)` and read `playbooks/amcache.md`.
+
 ## Concluding
-When you've reviewed the relevant registry events for this lead, `mark_examined("Reg")`.
+When you've reviewed the relevant registry events for this lead, `mark_examined("Reg")`
+(this also covers the Amcache rows parsed from this tree).

@@ -11,10 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..store.case_db import CaseDB
-from . import evtx, psh, registry
+from . import browser, evtx, lnk, psh, registry, srum, usn
 
 # parser name (from artifact_map.yaml) -> module with parse(case, root, dir_code)
-PARSERS = {"psh": psh, "evtx": evtx, "registry": registry}
+PARSERS = {"psh": psh, "evtx": evtx, "registry": registry, "browser": browser,
+           "lnk": lnk, "usn": usn, "srum": srum}
 
 _TEXT_EXTS = {".txt", ".csv", ".log", ".ini", ".htm", ".html", ".json", ".xml", ".ps1", ".bat", ".md"}
 

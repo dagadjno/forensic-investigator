@@ -394,9 +394,16 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] `Psh` (PowerShell history) parser
 - [x] `Evt` (Windows event logs / EVTX) parser — high-value channels & event IDs
 - [x] `Reg` (registry) parser — persistence, accounts, software, devices, user activity
+- [x] Amcache parser (`source="amcache"`) — program execution evidence + SHA1 hashes
+- [x] `Brw` (browser) parser — history & downloads (`source="browser"`)
+- [x] `Lnk` (shortcut/LNK) parser — recently-opened files: target path, MAC times, volume
+- [x] USN journal parser (`source="usn"`) — curated file create/delete/rename timeline
+- [x] On-demand `$MFT` lookup tool — resolves a file's full path + $SI/$FN timestamps by
+      name (the full `$MFT` is intentionally not bulk-parsed; this is targeted/lazy)
+- [x] `Sys` SRUM parser (`source="srum"`) — app activity windows + network connectivity
 - [x] Multi-provider AI (Anthropic / OpenAI / Gemini), resume, question-driven scoping
-- [x] The agent can also read text/CSV evidence (e.g. `Conn/CPorts.csv`) directly, even
-      without a dedicated parser
-- [ ] More parsers: prefetch, amcache, LNK, SRUM, `$MFT`/USN journal
+- [x] The agent can also read text/CSV evidence (e.g. `Conn/CPorts.csv`, `Sys/LastActivity.csv`)
+      directly, even without a dedicated parser
+      (note: in this dataset `Ranprog` holds executable *copies*, not `.pf` prefetch)
 - [ ] Memory-image analysis (Volatility3)
 - [ ] Cross-host correlation (investigate a whole domain of machines together)

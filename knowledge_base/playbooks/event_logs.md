@@ -8,6 +8,11 @@ high-value record. Each summary is prefixed `[<Family> <EventID>]` and the
 - `query_timeline(source="event_logs", ...)` — filter by `contains` (an EventID,
   username, IP, process name, service name…) or by `user`.
 - `grep_artifact(pattern, source="event_logs")` — regex across event summaries.
+- Summaries show only the top ~12 fields. If one ends with `[+N more fields —
+  get_raw_event]`, the record has more (e.g. **Hashes** for Sysmon 1, `IntegrityLevel`,
+  `LogonId`, `OriginalFileName`, `ParentProcessId`). Call `get_raw_event(locator)` to get
+  the complete field set — do this when a question needs a field the summary didn't show
+  (e.g. "what is the SHA256 of the payload?" → Sysmon 1 `Hashes`).
 
 ## High-value event IDs (what to look for)
 **Logons / accounts (Security):** 4624 successful logon (check `LogonType`: 3=network,

@@ -12,6 +12,7 @@ still lets the agent POINT at the .evtx files).
 """
 from __future__ import annotations
 
+import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -145,8 +146,15 @@ def _summary(family: str, eid: int, data: dict) -> str:
         parts.append(f"{k}={v.replace(chr(10), ' ')[:80]}")
         if len(parts) >= 12:
             break
-    body = "; ".join(parts)
-    return f"[{family} {eid}] {body}"[:600]
+    summary = f"[{family} {eid}] " + "; ".join(parts)
+    if len(summary) > 600:
+        summary = summary[:600]
+    # Tell the agent if fields were left out, and how to get them.
+    total = sum(1 for v in data.values() if v and v != "-")
+    dropped = total - len(parts)
+    if dropped > 0:
+        summary += f"  [+{dropped} more fields — get_raw_event]"
+    return summary
 
 
 def _user_of(data: dict, fallback: str) -> str:
@@ -183,6 +191,7 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                 locator=f"{SOURCE}:{rel}:{rec_id}",
                 ts=time or ts, host=computer, user=_user_of(data, sec_user),
                 event_type=f"{family}:{eid}",
+                raw=json.dumps(data),   # full field set, retrievable via get_raw_event
             )
             emitted += 1
         case.commit()
