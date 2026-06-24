@@ -1,0 +1,24 @@
+# Maps the KAPE/CyLR-style triage dir-codes to artifact types and parsers.
+# Identical across all DC33 OBSIDIAN host collections, so this is write-once and
+# is the main knob to adapt to a differently-laid-out collection.
+#
+# parser: the extraction module under src/extraction (null = not yet implemented;
+#         the dir is still cataloged for coverage + the file-metadata index so the
+#         agent can still POINT at files inside it).
+artifacts:
+  Arn:     { type: amcache_autoruns,   parser: null }
+  Brw:     { type: browser,            parser: null }
+  Conn:    { type: network,            parser: null }
+  Evt:     { type: event_logs,         parser: evtx }
+  Lnk:     { type: lnk,                parser: null }
+  Logs:    { type: acquisition_log,    parser: null }
+  MemDump: { type: memory,             parser: null }
+  Proc:    { type: process_listings,   parser: null }
+  Psh:     { type: powershell_history, parser: psh }
+  Ranprog: { type: prefetch,           parser: null }
+  RawData: { type: mft_usn,            parser: null }
+  Rcy:     { type: recycle_bin,        parser: null }
+  Reg:     { type: registry,           parser: registry }
+  Sch:     { type: scheduled_tasks,    parser: null }
+  Sys:     { type: srum_sysinfo,       parser: null }
+  WMI:     { type: wmi,                parser: null }

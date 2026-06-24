@@ -1,0 +1,16 @@
+# Core dependencies (default install — Anthropic provider).
+PyYAML>=6.0
+anthropic>=0.69
+
+# Event-log (EVTX) parsing. python-evtx is pure-Python (most portable);
+# `evtx` (Rust-backed) is faster if a wheel exists for your Python version.
+python-evtx>=0.7
+# evtx>=0.8        # optional faster backend; used automatically if installed
+
+# Registry-hive parsing (pure-Python).
+python-registry>=1.3
+
+# Optional LLM providers — install only the one(s) you use:
+#   pip install openai>=1.40           # for provider: openai
+#   pip install google-genai>=1.0      # for provider: gemini
+# Or via extras:  pip install -e ".[openai]"  /  ".[gemini]"  /  ".[all]"

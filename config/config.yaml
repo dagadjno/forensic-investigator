@@ -1,0 +1,32 @@
+# forensic-investigator configuration.
+#
+# Models are selected per ROLE. Each role picks a provider + model, so you can mix
+# providers and drop a high-volume role to a cheaper model with a one-line change.
+# provider: anthropic | openai | gemini  (install the matching SDK — see README extras)
+# Currently only the 'subagent' role drives the LLM; the others are forward-looking.
+# Optional per-role `effort` (low|medium|high|max) overrides llm.effort below.
+# The sub-agent makes many sequential tool-call rounds, so a lower effort there is
+# the single biggest speed/cost lever — raise it if you want deeper triage.
+models:
+  orchestrator: { provider: anthropic, model: claude-opus-4-8, effort: low }
+  subagent:     { provider: anthropic, model: claude-opus-4-8, effort: low }
+  report:       { provider: anthropic, model: claude-opus-4-8 }
+  verifier:     { provider: anthropic, model: claude-opus-4-8 }
+  # --- examples: swap a role to another provider ---
+  # subagent: { provider: openai, model: gpt-5 }
+  # subagent: { provider: gemini, model: gemini-2.5-pro }
+
+llm:
+  # Adaptive thinking + effort, per the Anthropic API guidance.
+  effort: high
+  max_tokens: 16000
+
+budgets:
+  # Run-to-completion, but with progress invariants so it terminates.
+  max_subagent_steps: 25     # tool-call rounds per sub-agent before it must conclude
+  max_lead_depth: 4          # how deep a filed-lead chain may go
+  max_total_leads: 200       # hard stop against runaway lead generation
+
+paths:
+  knowledge_base: knowledge_base
+  output: output

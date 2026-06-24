@@ -1,0 +1,1 @@
+What remote-access tool did the attacker install on the host, and how was it installed?

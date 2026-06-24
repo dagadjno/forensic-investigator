@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forensic-investigator"
+version = "0.1.0"
+description = "Agentic, LLM-driven investigator for Windows IR triage collections."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+    "anthropic>=0.69",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+gemini = ["google-genai>=1.0"]
+all = ["openai>=1.40", "google-genai>=1.0"]
+
+[project.scripts]
+forensic-investigator = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["src", "src.store", "src.extraction", "src.llm", "src.llm.backends",
+            "src.tools", "src.agents", "src.report"]
