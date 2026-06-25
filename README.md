@@ -52,6 +52,22 @@ have a list of questions to answer about an evidence image).
 
 ## 2. Install (step by step)
 
+### Quick setup (one command)
+
+From the project folder, run the bootstrapper — it creates the virtualenv, installs
+dependencies, and seeds your `.env`:
+
+```bash
+python install.py              # full setup: core tool + Volatility memory analysis (section 10)
+python install.py --no-memory  # core tool only (skip Volatility)
+```
+
+Then add your API key to the `.env` it created and you're ready ([section 3](#3-run-your-first-investigation)).
+It's cross-platform, stdlib-only, and safe to re-run. Prefer to do it by hand? The manual
+steps are below.
+
+### Manual setup
+
 Open a terminal **in the project folder** (the one containing `main.py`) and run:
 
 ```bash
@@ -164,7 +180,8 @@ Each run produces a folder `output/<case-id>/` containing two things:
 The **report** has these sections:
 
 - **Answer sheet** (if you gave questions) — each question resolved as one of:
-  - **ANSWERED** — a direct answer, with a citation to the exact source record.
+  - **ANSWERED** — a direct answer, with a citation to the exact source record. If more
+    than one well-supported answer turns up, all are shown as candidates for you to choose.
   - **POINTER** — the tool can't read the answer itself (e.g. it's inside an image or a
     binary it doesn't parse), so it points you at the file(s) to inspect by hand. *It does
     not guess.*
@@ -241,6 +258,10 @@ browse/query tables by clicking around — nice if you're not comfortable with S
 | `files` | Metadata for **every** file in the collection (even ones not parsed) — `path`, `owner`, `size`, timestamps. This is how the tool can point at files it can't read. |
 | `leads` | The investigation queue (what was investigated and in what order). |
 
+> The `events.source_artifact` column says which parser produced a row. Values:
+> `powershell_history`, `event_logs`, `registry`, `amcache`, `browser`, `lnk`, `usn`,
+> `srum`, plus the on-demand `mft` (from `mft_lookup`) and `memory` (from Volatility).
+
 ### Useful example queries
 
 ```sql
@@ -287,6 +308,8 @@ control how much work it does:
 | `--only Psh,Evt` | Examines **only** the listed categories. Doesn't chase leads into others. | Cheapest / fastest. Great for a first try or a focused look. |
 | `--only Psh,Evt --expand` | Same, but lets the AI follow leads into other categories when needed. | Focused, but allows cross-evidence correlation. |
 | `--relevant-only` | An AI picks which categories are relevant to your questions and examines only those. | Focused questions. (Note: for *broad* questions it may still pick almost everything — use `--only` to truly limit.) |
+| `--ingest-only` | **Parses** the evidence into `case.db` and stops — no AI, no cost. | Pre-build a parsed base once, then reuse it for many cheap runs without re-parsing the (slow) artifacts each time. |
+| `--reingest` | Forces a fresh re-parse even if this case was already ingested. | After changing a parser, or if a collection changed. |
 
 Examples:
 
@@ -296,6 +319,11 @@ python main.py investigate "PATH" --case-id test --only Psh
 
 # Focused on the questions, let the AI decide scope:
 python main.py investigate "PATH" --case-id ws001 --questions questions.txt --relevant-only
+
+# Parse once with no AI, then reuse that parsed case.db for repeat runs:
+python main.py investigate "PATH" --case-id base --ingest-only
+#   ...later, copy output/base/case.db to output/run1/case.db and investigate run1
+#   (it sees the parse is done and skips straight to investigating — no re-parse).
 ```
 
 The category codes (`Psh`, `Evt`, `Reg`, …) are listed in `config/artifact_map.yaml`.
@@ -356,13 +384,19 @@ your first run.**
 If a collection includes a RAM capture (a `MemDump/` folder with a `.raw`/`.mem`/`.dmp`
 image), the agent can analyze it with **Volatility3** to answer questions whose answers
 only live in memory — running processes, active network connections, injected code, or
-commands typed at a console. This is **opt-in**: if you don't set it up, the tool degrades
-gracefully (memory questions become POINTERs) and everything else runs unchanged.
+commands typed at a console.
 
-It's deliberately kept in its **own virtual environment** so Volatility's dependencies
-never collide with the core tool's, and the tool just shells out to it.
+**`python install.py` sets this up for you by default** (it builds the `.venv-vol`
+environment described below). This section explains what that is — useful for manual
+setup, a second machine, Docker, or if you installed with `--no-memory`.
 
-### Set it up (one time, per machine)
+Volatility is kept in its **own virtual environment** so its dependencies never collide
+with the core tool's; the tool just shells out to it. If memory isn't set up the tool
+degrades gracefully (memory questions become POINTERs) — though because `config.yaml`
+ships with `enabled: true`, you'll see Volatility errors until you either set it up or set
+`memory.enabled: false`.
+
+### Set it up manually (one time, per machine)
 
 ```bash
 # from the repo root
@@ -422,9 +456,11 @@ artifacts can't answer — and results are cached per plugin.
 
 | File | Purpose |
 |------|---------|
-| `config/config.yaml` | Which AI model each role uses, effort level, and safety budgets (max steps, etc.). |
+| `config/config.yaml` | Which AI model each role uses, effort level, safety budgets (max steps/leads), and the `memory:` block (Volatility settings — see [section 10](#10-memory-image-analysis-optional)). |
 | `config/artifact_map.yaml` | Maps evidence folder codes (`Evt`, `Reg`, …) to a type and a parser. Edit this to support a differently-organized collection. |
 | `knowledge_base/` | Plain-Markdown "playbooks" and references the AI reads while investigating. **You can improve the tool's behavior by editing these — no coding required.** |
+| `.env` (from `.env.example`) | Your API key(s). Loaded automatically; git-ignored. |
+| `requirements.txt` / `requirements-memory.txt` | Core dependencies / the optional Volatility dependency for memory analysis. |
 
 ---
 
@@ -445,6 +481,11 @@ Evidence folder (read-only)
   │
   ▼  [D] Report: write Markdown from the findings, then verify every citation resolves.
 ```
+
+Some evidence is analyzed **on demand** instead of bulk-parsed in step [A]: the full
+`$MFT` (via the `mft_lookup` tool) and the memory image (via `vol_run` / Volatility) are
+far too large to parse wholesale, so they're queried lazily during [C] only when a lead
+needs them — and their results join the same cited timeline (`source="mft"` / `"memory"`).
 
 **Key design rule:** the AI never parses raw binaries (event logs, registry hives,
 memory dumps). Trusted forensic parsers extract structured records first; the AI only
