@@ -1,1 +1,0 @@
-Were any other domain users found on the compromised asset? If so, the flag should be the users First, Middle, and Last name if known, otherwise use `none`. For example, `btv{Douglas Q. Funny}`, `btv{Sherman Charles Zeroday}`

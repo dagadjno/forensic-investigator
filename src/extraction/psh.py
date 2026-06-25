@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "powershell_history"
 
@@ -25,6 +27,7 @@ def _user_from_path(rel: str) -> str:
 
 def parse(case: CaseDB, root: Path, dir_code: str) -> None:
     base = root / dir_code
+    total = files = 0
     for fp in base.rglob("*"):
         if not fp.is_file():
             continue
@@ -36,6 +39,7 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
             lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
+        files += 1
         for n, line in enumerate(lines, start=1):
             cmd = line.strip()
             if not cmd:
@@ -45,4 +49,8 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                 source_artifact=SOURCE, summary=cmd, locator=locator,
                 user=user, event_type="ps_command", raw=line,
             )
+            total += 1
+        status(f"    [psh] {files} file(s), {total} commands ...")
     case.commit()
+    status_done(f"    {EMOJI['ok']} {c('[psh]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"commands from {files} history file(s)")

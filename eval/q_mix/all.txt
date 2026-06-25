@@ -1,6 +1,0 @@
-What user is assigned to namtws003?
-On namtws003, what exe allowed for user account control (UAC) bypass?
-On namtws003, what is domain name used for the credential exfiltration?
-What external (public) IP addresses did this host have active network connections to at the time of collection?
-Which processes related to remote access or lateral movement (e.g. remote-desktop or remote-admin tools) were actively running at the time of collection?
-Was any running process found to contain injected or hidden code in RAM? If so, name the process.

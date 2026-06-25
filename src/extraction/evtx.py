@@ -17,32 +17,65 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status as _status, status_done as _status_done
+from ..ui import EMOJI, c
 
 SOURCE = "event_logs"
 
-# High-value event IDs per channel family.
-_SEC = {4624, 4625, 4634, 4647, 4648, 4672, 4688, 4689, 4697, 4698, 4699, 4700, 4701,
-        4702, 4720, 4722, 4724, 4725, 4726, 4728, 4732, 4738, 4740, 4756, 1102}
-_SYS = {7045, 7034, 7036, 7040, 7022, 104, 6005, 6006, 6008}
+# High-value event IDs per channel family. (A channel may instead use ids=None below,
+# meaning "keep ALL event IDs" — used for low-volume, uniformly-high-value channels.)
+_SEC = {
+    # logon / session
+    4624, 4625, 4634, 4647, 4648, 4672, 4778, 4779, 4964,
+    # process / service creation
+    4688, 4689, 4697,
+    # account management
+    4720, 4722, 4723, 4724, 4725, 4726, 4738, 4740, 4767, 4781,
+    # group management (AD: create/delete/change + member add/remove, all scopes)
+    4727, 4728, 4729, 4730, 4731, 4732, 4733, 4734, 4737, 4754, 4755, 4756, 4757, 4764,
+    # Kerberos / NTLM — DC authentication, lateral movement, ticket attacks
+    4768, 4769, 4771, 4776, 4777,
+    # account/group enumeration (recon)
+    4798, 4799,
+    # scheduled tasks (also logged in Security)
+    4698, 4699, 4700, 4701, 4702,
+    # file-share access
+    5140, 5142, 5143, 5144, 5145,
+    # anti-forensics / audit tampering
+    1102, 1100, 4719, 4616,
+}
+_SYS = {7045, 7040, 7036, 7034, 7031, 7022, 7009, 7001, 7000, 104, 6005, 6006, 6008}
 _PS = {4103, 4104, 400, 403, 600, 800}
 _SYSMON = set(range(1, 30))
 _TASK = {106, 140, 141, 200, 201, 202, 4698, 4699, 4700, 4701, 4702}
 _RDP = {21, 22, 23, 24, 25, 39, 40, 1149}
 _WINRM = {6, 91, 168}
 _DEFENDER = {1006, 1007, 1008, 1009, 1116, 1117, 1118, 1119, 5001, 5004, 5007, 5010, 5012}
+_WMI = {5857, 5859, 5860, 5861}  # provider load + consumer/filter/binding (WMI persistence)
 
-# (filename substring, family label, interesting-id set). First match wins.
+# (filename substring, family label, interesting-id set). FIRST MATCH WINS, so specific
+# channels must precede the generic "security.evtx"/"system.evtx" entries — e.g. the SMB
+# Security logs end in "...%4Security.evtx" and would otherwise be captured as "Security".
+# ids=None means "keep every event ID in this channel" (for low-volume, high-value logs).
 _CHANNELS = [
-    ("security.evtx", "Security", _SEC),
-    ("system.evtx", "System", _SYS),
     ("powershell%4operational", "PowerShell-Op", _PS),
     ("windows powershell.evtx", "PowerShell", _PS),
     ("sysmon%4operational", "Sysmon", _SYSMON),
     ("taskscheduler%4operational", "TaskScheduler", _TASK),
     ("terminalservices-localsessionmanager%4operational", "RDP", _RDP),
     ("terminalservices-remoteconnectionmanager%4operational", "RDP", _RDP),
+    ("terminalservices-rdpclient%4operational", "RDP-Client", None),   # outbound RDP (lateral src)
     ("windows defender%4operational", "Defender", _DEFENDER),
     ("winrm%4operational", "WinRM", _WINRM),
+    ("wmi-activity%4operational", "WMI", _WMI),                        # WMI persistence
+    ("bits-client%4operational", "BITS", None),                       # downloads via BITS
+    ("applocker", "AppLocker", None),                                 # blocked/allowed execution
+    ("smbserver%4security", "SMB", None),                             # share auth/access (server)
+    ("smbclient%4security", "SMB", None),                             # share auth/access (client)
+    ("directory service.evtx", "DirSvc", None),                       # AD directory changes (DCs)
+    # Core logs last (their substrings are generic).
+    ("security.evtx", "Security", _SEC),
+    ("system.evtx", "System", _SYS),
 ]
 
 # Fields surfaced first in the summary when present (most useful for triage).
@@ -181,9 +214,21 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
             continue
         rel = fp.relative_to(root).as_posix()
         parsed += 1
+        try:
+            size_mb = fp.stat().st_size / (1024 * 1024)
+        except OSError:
+            size_mb = 0
+        # Heartbeat: a single line per channel that UPDATES IN PLACE while scanning (a DC's
+        # Security.evtx can hold millions of records), then finalizes to one permanent line.
+        label = f"[evtx] {family} {fp.name} ({size_mb:.0f} MB)"
+        scanned = kept = 0
+        _status(f"    {label}: scanning...")
         for rec_id, ts, xml in _iter_records(fp, backend):
+            scanned += 1
+            if scanned % 25000 == 0:
+                _status(f"    {label}: {scanned:,} scanned, {emitted:,} kept")
             eid, computer, time, sec_user, data = _parse_xml(xml)
-            if eid is None or eid not in ids:
+            if eid is None or (ids is not None and eid not in ids):
                 continue
             case.add_event(
                 source_artifact=SOURCE,
@@ -194,6 +239,8 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                 raw=json.dumps(data),   # full field set, retrievable via get_raw_event
             )
             emitted += 1
+            kept += 1
         case.commit()
-    print(f"    [evtx] parsed {parsed} high-value channels, emitted {emitted} events "
-          f"(backend: {backend})", flush=True)
+        _status_done(f"    [evtx] {family} {fp.name}: {scanned:,} records, {kept:,} kept")
+    print(f"    {EMOJI['ok']} {c('[evtx]', 'green', 'bold')} parsed {parsed} high-value channels, "
+          f"emitted {c(str(emitted), 'bold')} events (backend: {backend})", flush=True)

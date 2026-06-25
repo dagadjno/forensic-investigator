@@ -24,6 +24,8 @@ import json
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "registry"
 
@@ -321,6 +323,7 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
         if htype is None:
             continue
         rel = fp.relative_to(root).as_posix()
+        status(f"    [registry] {htype} {fp.name} ({total} events so far) ...")
         try:
             reg = Registry.Registry(str(fp))
         except Exception as e:
@@ -335,4 +338,5 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
             print(f"    [registry] error parsing {rel}: {type(e).__name__}: {e}", flush=True)
         case.commit()
         total += emit.n
-    print(f"    [registry] emitted {total} registry/amcache events", flush=True)
+    status_done(f"    {EMOJI['ok']} {c('[registry]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"registry/amcache events")

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..llm.client import LLMClient
 from ..store.case_db import CaseDB
+from ..ui import EMOJI, c
 from . import subagent
 
 # Lead priority. Order matters for correlation: "source" buckets (where the compromise
@@ -82,7 +83,10 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         if lead is None:
             break
         case.set_lead_status(lead["id"], "in_progress")
-        print(f"  -> lead #{lead['id']} [{lead['source']}] {lead['title']}", flush=True)
+        src_color = {"question": "yellow", "coverage": "blue", "agent": "magenta"}.get(
+            lead["source"], "gray")
+        print(f"  {EMOJI['lead']} {c('lead #' + str(lead['id']), 'cyan', 'bold')} "
+              f"{c('[' + lead['source'] + ']', src_color)} {lead['title']}", flush=True)
         subagent.run(llm, case, artifact_root, kb_dir, lead, host, budgets)
         case.set_lead_status(lead["id"], "closed")
         # Progress invariant: a coverage lead's bucket is examined once visited.
@@ -91,4 +95,5 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         processed += 1
 
     if processed >= safety_cap:
-        print("  ! safety cap reached; stopping (check for runaway lead generation)")
+        print(f"  {EMOJI['warn']} {c('safety cap reached', 'yellow', 'bold')}; stopping "
+              f"(check for runaway lead generation)")

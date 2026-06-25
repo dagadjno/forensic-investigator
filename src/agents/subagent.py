@@ -12,6 +12,7 @@ from ..llm.base import neutral_user
 from ..llm.client import LLMClient
 from ..store.case_db import CaseDB
 from ..tools.registry import TOOL_SCHEMAS, ToolContext, dispatch
+from ..ui import c
 
 _RULES = """You are a digital-forensics sub-agent investigating one host's triage collection.
 
@@ -34,6 +35,11 @@ Hard rules:
 _PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry",
               "Brw": "browser", "Lnk": "lnk", "RawData": "usn", "Sys": "srum",
               "MemDump": "memory"}
+
+# Tools that count as "searching" — summarized into an auto-unresolved note if a question
+# lead ends without recording any answer.
+_SEARCH_TOOLS = {"query_timeline", "grep_artifact", "read_file", "list_files",
+                 "mft_lookup", "vol_run", "get_raw_event"}
 
 
 def _system(case: CaseDB, host: str) -> str:
@@ -73,14 +79,19 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
 
     history = [neutral_user(task)]
     max_steps = budgets.get("max_subagent_steps", 25)
+    searches: list[str] = []   # what this lead actually looked at (for an honest unresolved)
+    aborted = False
+    steps_done = 0
 
     for step in range(1, max_steps + 1):
+        steps_done = step
         try:
             resp = llm.complete("subagent", system, history, tools=TOOL_SCHEMAS)
         except Exception as e:
             # Don't let one lead's API failure kill the whole run; conclude this lead.
-            print(f"       lead #{lead['id']} aborted after API error: {type(e).__name__}: {e}",
-                  flush=True)
+            print(f"       {c('lead #' + str(lead['id']) + ' aborted', 'red')} after API error: "
+                  f"{type(e).__name__}: {e}", flush=True)
+            aborted = True
             break
         history.append(resp.assistant_turn)
         if resp.stop_reason != "tool_use":
@@ -88,13 +99,37 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         results = []
         for call in resp.tool_calls:
             out, is_err = dispatch(ctx, call.name, call.input)
-            flag = "ERR " if is_err else ""
-            print(f"       step {step}: {flag}{call.name}({_brief(call.input)})", flush=True)
+            tag = (c("ERR", "red", "bold") + " ") if is_err else ""
+            print(f"       {c('step ' + str(step), 'gray')}: {tag}{c(call.name, 'cyan')}"
+                  f"({_brief(call.input)})", flush=True)
+            if call.name in _SEARCH_TOOLS and not is_err:
+                searches.append(f"{call.name}({_brief(call.input)})")
             results.append({"type": "tool_result", "tool_use_id": call.id,
                             "content": out, "is_error": is_err})
         history.append(neutral_user(results))
 
+    _conclude_unresolved(case, lead, searches, steps_done, max_steps, aborted)
     return {"lead_id": lead["id"]}
+
+
+def _conclude_unresolved(case, lead, searches, steps_done, max_steps, aborted):
+    """Safety net: a QUESTION lead that ended without recording ANY answer gets an honest
+    'unresolved' (with what it searched) instead of silently going blank — so an empty
+    result is distinguishable from a crashed lead."""
+    qid = lead.get("question_id")
+    if lead["source"] != "question" or not qid or case.answers_for(qid):
+        return
+    if aborted:
+        reason = f"Investigation aborted by an API error after {steps_done} step(s)."
+    elif steps_done >= max_steps:
+        reason = f"Step budget exhausted ({max_steps} steps) with no matching evidence found."
+    else:
+        reason = f"Concluded after {steps_done} step(s) with no matching evidence found."
+    if searches:
+        reason += " Searched: " + "; ".join(searches[:10])
+    case.add_answer(qid, "unresolved", reasoning=reason[:1200])
+    print(f"       {c('auto-unresolved', 'yellow')}: no answer recorded; logged what was searched",
+          flush=True)
 
 
 def _brief(args: dict) -> str:

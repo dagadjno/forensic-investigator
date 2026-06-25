@@ -25,6 +25,8 @@ import os
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "usn"
 _MAX_EVENTS = 6000  # bound the curated output
@@ -70,9 +72,13 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                     print(f"    [usn] no CSV header in {rel}; skipping", flush=True)
                     continue
                 reader = csv.DictReader(fh, fieldnames=header)
+                scanned = 0
                 for row in reader:
                     if total >= _MAX_EVENTS:
                         break
+                    scanned += 1
+                    if scanned % 25000 == 0:
+                        status(f"    [usn] {scanned:,} rows scanned, {total} kept ...")
                     name = (row.get("File name") or "").strip()
                     if os.path.splitext(name)[1].lower() not in _INTERESTING_EXT:
                         continue
@@ -102,4 +108,5 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
             print(f"    [usn] could not read {rel}: {e}", flush=True)
         case.commit()
     note = " (capped)" if total >= _MAX_EVENTS else ""
-    print(f"    [usn] emitted {total} curated USN events{note}", flush=True)
+    status_done(f"    {EMOJI['ok']} {c('[usn]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"curated USN events{note}")

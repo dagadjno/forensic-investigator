@@ -15,9 +15,12 @@ Backend: LnkParse3 (pure Python). If it isn't installed, Lnk is skipped graceful
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "lnk"
 
@@ -49,7 +52,12 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
             continue
         rel = fp.relative_to(root).as_posix()
         try:
-            with fp.open("rb") as fh:
+            # LnkParse3 emits UserWarnings for shell-item enum values it doesn't recognize
+            # (e.g. "Not implemented sort_index_value …"). They're harmless — the fields we
+            # use (target path, MAC times, args) still parse — and only clutter output, so
+            # silence them locally around the parse.
+            with fp.open("rb") as fh, warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 j = LnkParse3.lnk_file(fh).get_json()
         except Exception as e:
             print(f"    [lnk] could not parse {rel}: {type(e).__name__}: {e}", flush=True)
@@ -78,4 +86,7 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                        event_type=f"{SOURCE}:shortcut", raw=json.dumps(j, default=str))
         total += 1
         case.commit()
-    print(f"    [lnk] emitted {total} shortcut events", flush=True)
+        if total % 25 == 0:
+            status(f"    [lnk] {total} shortcuts ...")
+    status_done(f"    {EMOJI['ok']} {c('[lnk]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"shortcut events")

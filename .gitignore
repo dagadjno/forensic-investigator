@@ -17,3 +17,10 @@ venv/
 
 # Claude
 .claude
+
+# Eval run artifacts — the reusable harness under eval/ is tracked, but the answer key
+# you write, the generated question files, and run logs are per-project/per-run.
+eval/answers.json
+eval/q_*/
+eval/logs/
+eval/report.md

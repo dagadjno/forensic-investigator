@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from ..ui import EMOJI, c
 from . import browser, evtx, lnk, psh, registry, srum, usn
 
 # parser name (from artifact_map.yaml) -> module with parse(case, root, dir_code)
@@ -81,6 +82,8 @@ def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
     for code, spec in artifact_map["artifacts"].items():
         parser_name = spec.get("parser")
         if parser_name and code in present and parser_name in PARSERS:
+            print(f"    {EMOJI['folder']} parsing {c(code, 'cyan', 'bold')} ({spec['type']}) ...",
+                  flush=True)
             PARSERS[parser_name].parse(case, root, code)
     case.commit()
     case.set_meta("ingested", "1")

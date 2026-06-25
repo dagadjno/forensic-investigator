@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "browser"
 _MAX_ROWS = 5000  # per file, safety bound
@@ -65,11 +67,12 @@ def _emit(case: CaseDB, rel: str, rownum: int, category: str, summary: str,
 
 def parse(case: CaseDB, root: Path, dir_code: str) -> None:
     base = root / dir_code
-    total = 0
+    total = files = 0
     for fp in base.rglob("*.csv"):
         if not fp.is_file():
             continue
         rel = fp.relative_to(root).as_posix()
+        files += 1
         try:
             with fp.open("r", encoding="utf-8-sig", errors="replace", newline="") as fh:
                 reader = csv.DictReader(fh)
@@ -98,6 +101,10 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                         vals = "; ".join(f"{k}={v}" for k, v in row.items() if v)[:300]
                         _emit(case, rel, i, "row", f"[Browser] {vals}", "", "", row)
                     total += 1
+                    if total % 1000 == 0:
+                        status(f"    [browser] {files} file(s), {total} events ...")
         except OSError as e:
             print(f"    [browser] could not read {rel}: {e}", flush=True)
-    print(f"    [browser] emitted {total} browser events", flush=True)
+        status(f"    [browser] {files} file(s), {total} events ...")
+    status_done(f"    {EMOJI['ok']} {c('[browser]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"browser events")

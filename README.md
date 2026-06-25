@@ -126,15 +126,16 @@ python main.py investigate "C:/Users/me/Downloads/ACQ-IR-namtws001-20250702-0113
 You'll see progress printed as it works:
 
 ```
-[A] Ingesting namtws001-20250702-0113 ...
-    [evtx] parsed 13 high-value channels, emitted 5780 events ...
-    cataloged 686 files, 5829 timeline events
-[B/C] Investigating (run to completion) ...
-  -> lead #1 [coverage] Explore the Psh (powershell_history) artifacts
+🔍 Ingesting namtws001-20250702-0113 ...
+    📂 parsing Evt (event_logs) ...
+    ✅ [evtx] parsed 20 high-value channels, emitted 24630 events (backend: evtx)
+    📊 cataloged 686 files, 26657 timeline events
+🧠 Investigating (run to completion) ...
+  🔎 lead #1 [coverage] Explore the Psh (powershell_history) artifacts
        step 1: kb_read(...)
        ...
-[D] Writing report ...
-Done. Report: .../output/ws001/report.md
+📝 Writing report ...
+✅ Done. Report: .../output/ws001/report.md
 ```
 
 When it finishes, open **`output/ws001/report.md`** — that's your investigation report.
@@ -142,6 +143,12 @@ When it finishes, open **`output/ws001/report.md`** — that's your investigatio
 > ⚠️ A full run examines **every** evidence category and can make many AI calls. To keep
 > your first run cheap, see [Run modes](#7-run-modes-controlling-cost--scope) — e.g. add
 > `--only Psh` to investigate just one category.
+
+> **Output notes:** in a terminal the output is colorized and parsing shows a live
+> progress line that updates in place; when redirected to a file it's plain text (no color
+> codes). Long runs automatically keep the machine from **idle-sleeping** (Windows — but
+> keep a laptop **lid open**, which the power plan controls separately). Set `NO_COLOR=1`
+> or `NO_EMOJI=1` for plain output.
 
 ---
 
@@ -185,7 +192,8 @@ The **report** has these sections:
   - **POINTER** — the tool can't read the answer itself (e.g. it's inside an image or a
     binary it doesn't parse), so it points you at the file(s) to inspect by hand. *It does
     not guess.*
-  - **UNRESOLVED** — it searched but found nothing; it tells you what it looked at.
+  - **UNRESOLVED** — it searched but found nothing; it records **what it looked at** (even
+    if a lead used up its step budget, so a gap is never left silently blank).
 - **Findings** — notable things it discovered (with severity, an ATT&CK technique where
   relevant, and citations).
 - **Coverage & gaps** — a table of every evidence category, whether it was parsed, and
@@ -501,7 +509,9 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] Core engine: parsing → timeline (`case.db`) → agentic loop → cited Markdown report
 - [x] Citation enforcement + verification (no uncited claims)
 - [x] `Psh` (PowerShell history) parser
-- [x] `Evt` (Windows event logs / EVTX) parser — high-value channels & event IDs
+- [x] `Evt` (Windows event logs / EVTX) parser — Rust-backed (`evtx`), fast; curated
+      high-value channels & IDs incl. Kerberos/NTLM, AD group management, file-share access,
+      WMI/BITS/AppLocker/RDP-client/SMB/Directory-Service
 - [x] `Reg` (registry) parser — persistence, accounts, software, devices, user activity
 - [x] Amcache parser (`source="amcache"`) — program execution evidence + SHA1 hashes
 - [x] `Brw` (browser) parser — history & downloads (`source="browser"`)

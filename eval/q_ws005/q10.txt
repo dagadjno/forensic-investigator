@@ -1,1 +1,0 @@
-If Defender detected a Hacking tool, what was the detection Threat Name (Otherwise put: None)?

@@ -1,1 +1,0 @@
-NAMTWS04 had a powershell command run by the 'administrator' account that included an encoded command - what IP Address and Port did the command attempt to reach out to? (format xxx.xxx.xxx.xxx:xxx

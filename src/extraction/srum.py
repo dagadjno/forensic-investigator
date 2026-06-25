@@ -18,6 +18,8 @@ import struct
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from .progress import status, status_done
+from ..ui import EMOJI, c
 
 SOURCE = "srum"
 _UTC = datetime.timezone.utc
@@ -130,7 +132,11 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
         appt = _table(db, _APP_USAGE)
         if appt:
             agg: dict[tuple, dict] = {}
+            n = 0
             for r in appt.records():
+                n += 1
+                if n % 5000 == 0:
+                    status(f"    [srum] app usage: {n:,} rows ...")
                 app = idmap.get(r.get("AppId"), f"App{r.get('AppId')}")
                 user = idmap.get(r.get("UserId"), "")
                 ts = _ole(r.get("TimeStamp"))
@@ -155,7 +161,11 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
         # --- Network connectivity: one event per record ---
         nett = _table(db, _NET_CONN)
         if nett:
+            n = 0
             for r in nett.records():
+                n += 1
+                if n % 5000 == 0:
+                    status(f"    [srum] network: {n:,} rows ...")
                 app = idmap.get(r.get("AppId"), f"App{r.get('AppId')}")
                 start = _filetime(r.get("ConnectStartTime"))
                 fields = {k.name: r.get(k.name) for k in nett.columns}
@@ -166,4 +176,5 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                 _emit(case, rel, f"net:{r.get('AutoIncId')}", "network", summary, start, fields)
                 total += 1
         case.commit()
-    print(f"    [srum] emitted {total} SRUM events", flush=True)
+    status_done(f"    {EMOJI['ok']} {c('[srum]', 'green', 'bold')} emitted {c(str(total), 'bold')} "
+                f"SRUM events")

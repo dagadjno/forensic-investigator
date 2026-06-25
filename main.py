@@ -19,6 +19,7 @@ from src.extraction.ingest import ingest
 from src.llm.client import LLMClient
 from src.report.generator import write_report
 from src.store.case_db import CaseDB
+from src import ui, keepawake
 
 ROOT = Path(__file__).parent
 
@@ -62,6 +63,11 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         print(f"error: not a directory: {artifact_root}", file=sys.stderr)
         return 2
 
+    # Keep the machine from idle-sleeping mid-run (auto-released on exit). Does NOT override
+    # closing a laptop lid — keep the lid open for unattended runs.
+    if keepawake.prevent_idle_sleep():
+        print(f"    {ui.c('(keep-awake on: system will not idle-sleep during this run)', 'gray')}")
+
     config = yaml.safe_load((ROOT / "config" / "config.yaml").read_text(encoding="utf-8"))
     artifact_map = yaml.safe_load((ROOT / "config" / "artifact_map.yaml").read_text(encoding="utf-8"))
 
@@ -72,7 +78,8 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     case = CaseDB(out_dir / "case.db")
     resuming = case.get_meta("ingested") == "1"
     if resuming:
-        print(f"[*] Resuming case '{args.case_id}' (existing case.db found).")
+        print(f"{ui.EMOJI['resume']} {ui.c('Resuming', 'yellow', 'bold')} case "
+              f"'{args.case_id}' (existing case.db found).")
 
     # When --questions is given, replace the question SET (content-hashed ids). Unchanged
     # questions keep their answers; changed/new ones become new questions; removed ones drop.
@@ -83,14 +90,16 @@ def cmd_investigate(args: argparse.Namespace) -> int:
             if q:
                 case.add_question(_qid(q), q)
 
-    print(f"[A] Ingesting {host} ...")
+    print(f"{ui.EMOJI['search']} {ui.c('Ingesting', 'cyan', 'bold')} {ui.c(host, 'bold')} ...")
     ingest(case, artifact_root, artifact_map, force=args.reingest)
     n_events = case.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     n_files = case.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
-    print(f"    cataloged {n_files} files, {n_events} timeline events")
+    print(f"    {ui.EMOJI['chart']} cataloged {ui.c(str(n_files), 'bold')} files, "
+          f"{ui.c(str(n_events), 'bold')} timeline events")
 
     if args.ingest_only:
-        print("    --ingest-only: parsed case.db is ready; skipping investigation.")
+        print(f"    {ui.EMOJI['ok']} {ui.c('--ingest-only', 'green')}: parsed case.db is ready; "
+              f"skipping investigation.")
         case.close()
         return 0
 
@@ -143,18 +152,21 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     if priority_overrides:
         bits.append("question-ranked priority")
     bits.append(f"expansion={'on' if budgets['allow_expansion'] else 'off'}")
-    print(f"[B/C] Investigating (run to completion) ... [{', '.join(bits)}]", flush=True)
+    print(f"{ui.EMOJI['brain']} {ui.c('Investigating', 'magenta', 'bold')} (run to completion) "
+          f"... {ui.c('[' + ', '.join(bits) + ']', 'gray')}", flush=True)
     try:
         orchestrator.run(llm, case, artifact_root, kb_dir, host, budgets,
                          only=only, priority_overrides=priority_overrides)
     except KeyboardInterrupt:
-        print("    interrupted; writing report with results so far", flush=True)
+        print(f"    {ui.EMOJI['warn']} {ui.c('interrupted', 'yellow')}; writing report with "
+              f"results so far", flush=True)
     except Exception as e:
-        print(f"    investigation error ({type(e).__name__}: {e}); writing partial report", flush=True)
+        print(f"    {ui.EMOJI['error']} {ui.c('investigation error', 'red', 'bold')} "
+              f"({type(e).__name__}: {e}); writing partial report", flush=True)
 
-    print("[D] Writing report ...")
+    print(f"{ui.EMOJI['report']} {ui.c('Writing report', 'blue', 'bold')} ...")
     report = write_report(case, host, out_dir)
-    print(f"Done. Report: {report}")
+    print(f"{ui.EMOJI['ok']} {ui.c('Done.', 'green', 'bold')} Report: {report}")
     case.close()
     return 0
 

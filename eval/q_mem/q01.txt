@@ -1,1 +1,0 @@
-The host disk artifacts do not show what was connected when the image was captured. Using the memory capture, what external (public) IP addresses did this host have active network connections to at the time of collection?

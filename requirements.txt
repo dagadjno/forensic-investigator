@@ -2,10 +2,16 @@
 PyYAML>=6.0
 anthropic>=0.69
 
-# Event-log (EVTX) parsing. python-evtx is pure-Python (most portable);
-# `evtx` (Rust-backed) is faster if a wheel exists for your Python version.
-python-evtx>=0.7
-# evtx>=0.8        # optional faster backend; used automatically if installed
+# Event-log (EVTX) parsing. `evtx` is the Rust-backed parser (ships abi3 wheels for
+# CPython 3.10+, so it installs without a toolchain). It is both much FASTER and more
+# ROBUST than pure-Python python-evtx — in testing python-evtx silently truncated a large
+# Sysmon log to 61 of ~15,000 records, while evtx read all of them. The parser prefers
+# `evtx` and falls back to python-evtx (imported as `Evtx`) only if that's what's present.
+#
+# ⚠ Windows: do NOT install both — `evtx` and `Evtx` collide on the case-insensitive
+# filesystem (python-evtx raises an ImportError if it detects this). Install ONE.
+evtx>=0.12
+# python-evtx>=0.7   # pure-Python fallback — use INSTEAD of evtx (not alongside)
 
 # Registry-hive parsing (pure-Python).
 python-registry>=1.3
