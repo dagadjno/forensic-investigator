@@ -173,6 +173,14 @@ The report will contain an **answer sheet** addressing each question. When quest
 provided, the AI also automatically figures out which evidence categories are most
 relevant to them and examines those first.
 
+> **CTF helpers (automatic):** the agent scans every artifact for planted flag markers —
+> `btv{...}`, `flag{...}`, `FL4G={...}` — and surfaces them as answers, and it returns
+> filenames/commands/paths **verbatim** (e.g. `AdFind.exe`, not `AdFind`) so they match an
+> exact-match grader. No flags to set.
+
+For a full **live-CTF runbook** — multi-host parsing, routing questions to hosts, the prep
+checklist, and troubleshooting — see **[CTF_PLAYBOOK.md](CTF_PLAYBOOK.md)**.
+
 ---
 
 ## 5. Understanding the output
@@ -336,6 +344,20 @@ python main.py investigate "PATH" --case-id base --ingest-only
 
 The category codes (`Psh`, `Evt`, `Reg`, …) are listed in `config/artifact_map.yaml`.
 
+### Many hosts at once (parallel)
+
+For a multi-host case (e.g. a whole CTF), `run_hosts.py` runs several hosts **in parallel**
+— each its own process and `case.db`, bounded by `--jobs`. It accepts the same flags as
+`investigate` (each host's console output goes to `output/<host>/run.log`):
+
+```bash
+# parse every host once, 4 at a time (no AI):
+python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --ingest-only --jobs 4
+
+# then investigate them all against one question set, 3 at a time:
+python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --questions questions.txt --relevant-only --jobs 3
+```
+
 ---
 
 ## 8. Resuming a run
@@ -465,10 +487,43 @@ artifacts can't answer — and results are cached per plugin.
 | File | Purpose |
 |------|---------|
 | `config/config.yaml` | Which AI model each role uses, effort level, safety budgets (max steps/leads), and the `memory:` block (Volatility settings — see [section 10](#10-memory-image-analysis-optional)). |
-| `config/artifact_map.yaml` | Maps evidence folder codes (`Evt`, `Reg`, …) to a type and a parser. Edit this to support a differently-organized collection. |
+| `config/artifact_map.yaml` | Maps evidence folder codes (`Evt`, `Reg`, …) to a type and a parser — **the adapter for a collection's layout**. Edit it (or pass `--artifact-map`) to support a differently-organized collection. |
+| `config/artifact_map.stock.yaml` | Ready-made layout map for **stock AChoirX** output (vs. the DC33 custom layout). Use via `--artifact-map`. |
 | `knowledge_base/` | Plain-Markdown "playbooks" and references the AI reads while investigating. **You can improve the tool's behavior by editing these — no coding required.** |
 | `.env` (from `.env.example`) | Your API key(s). Loaded automatically; git-ignored. |
 | `requirements.txt` / `requirements-memory.txt` | Core dependencies / the optional Volatility dependency for memory analysis. |
+
+### Using it on a different collection or a newer collector
+
+The tool is built around **AChoirX**-style triage collections (the DC33 dataset used a
+*custom* AChoirX collector). It isn't hardwired to one layout: `artifact_map.yaml` maps each
+top-level **folder code** to a type + parser, so adapting to a different layout is usually a
+**YAML edit, not code**.
+
+**Check a collection before a full run** (deterministic, no AI, no cost):
+
+```bash
+python main.py check "PATH/TO/COLLECTION"
+```
+
+It reports which folder codes are recognized, whether each parser finds its expected input
+(and for the CSV parsers, whether the columns match), and a verdict — **compatible /
+partial / unrecognized**. Run this first on a collection from a new source: the parsers
+degrade *silently* on an unfamiliar layout (skip missing files, emit 0), so an almost-empty
+result can otherwise look like it "worked." `check` makes that explicit.
+
+**Use a different layout map** with `--artifact-map` (works on both `check` and `investigate`):
+
+```bash
+python main.py check      --artifact-map config/artifact_map.stock.yaml "PATH/TO/COLLECTION"
+python main.py investigate --artifact-map config/artifact_map.stock.yaml "PATH" --case-id x
+```
+
+A ready-made **`config/artifact_map.stock.yaml`** is included for **stock AChoirX** output.
+Stock AChoirX is ~95% identical to the DC33 layout — the same bundled export tools (so the
+browser/USN CSV formats match) and standard binary formats — differing only in a few folder
+codes (`Ranprog`→`Prf`, `Sys`→`SYS`, a new `PCA` bucket). For any other collector, copy
+`artifact_map.yaml`, rename/add codes to match what `check` reports, and you're done.
 
 ---
 
@@ -526,4 +581,9 @@ Parsers and features marked done are working and tested on real evidence.
       (note: in this dataset `Ranprog` holds executable *copies*, not `.pf` prefetch)
 - [x] Memory-image analysis (Volatility3) — on-demand `vol_run` tool over an isolated venv
       (optional; see [section 10](#10-memory-image-analysis-optional))
+- [x] Collection-compatibility `check` command + `--artifact-map` layout adapter — incl. a
+      ready-made map for stock AChoirX output (verified ~95% compatible with the DC33 layout)
+- [x] Parallel multi-host runs (`run_hosts.py`) + CTF helpers (deterministic planted-flag
+      scan via `find_flags`, verbatim-token answers)
 - [ ] Cross-host correlation (investigate a whole domain of machines together)
+- [ ] Parser for the stock-AChoirX `PCA` bucket (Program Compatibility Assistant — execution evidence)

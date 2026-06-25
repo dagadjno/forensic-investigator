@@ -29,6 +29,11 @@ def _ok(payload) -> str:
     return json.dumps(payload, default=str)[:12000]
 
 
+# CTF flag markers: btv{...}, flag{...}, FL4G={...}, key{...}, ctf{...} (the answer is often
+# planted as such a marker). Allows an optional = / : before the braces (e.g. `FL4G={...}`).
+_FLAG_RX = re.compile(r"(?i)(?:btv|flag|fl4g|ctf|key)\s*[=:]?\s*\{[^}]{1,200}\}")
+
+
 # ---- tool schemas (sent to the model) -----------------------------------
 TOOL_SCHEMAS = [
     {
@@ -67,6 +72,15 @@ TOOL_SCHEMAS = [
             },
             "required": ["pattern"],
         },
+    },
+    {
+        "name": "find_flags",
+        "description": "Scan ALL parsed artifacts and readable text files for planted CTF flag "
+                       "markers — btv{...}, flag{...}, FL4G={...}, key{...}, ctf{...}. In a CTF the "
+                       "intended answer is frequently planted as such a marker, so call this EARLY "
+                       "and whenever a question's answer is elusive. Each hit comes back with a "
+                       "citable locator; record the value inside the braces via answer_question.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     {
         "name": "list_files",
@@ -282,6 +296,45 @@ def _grep_artifact(ctx, args):
             if len(out) >= limit:
                 break
     return _ok({"count": len(out), "rows": out}), False
+
+
+def _find_flags(ctx, args):
+    """Deterministic CTF-flag-marker scan over parsed events + readable text files. Each
+    distinct flag is returned once with its first citable locator."""
+    out, seen = [], set()
+    # 1) Parsed artifacts (PowerShell history, EVTX scriptblocks, registry, browser, USN …).
+    for r in ctx.case.conn.execute("SELECT summary, raw, locator FROM events"):
+        blob = (r["summary"] or "") + "\n" + (r["raw"] or "")
+        for m in _FLAG_RX.finditer(blob):
+            flag = m.group(0)
+            if flag.lower() in seen:
+                continue
+            seen.add(flag.lower())
+            ctx.case.emit_locator(r["locator"], "event")
+            out.append({"flag": flag, "locator": r["locator"]})
+            if len(out) >= 100:
+                return _ok({"count": len(out), "flags": out, "note": "capped at 100"}), False
+    # 2) Readable text files not covered by a parser (bounded by size).
+    for r in ctx.case.conn.execute("SELECT path FROM files WHERE is_text=1"):
+        fp = ctx.root / r["path"]
+        try:
+            if fp.stat().st_size > 5_000_000:
+                continue
+            lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for i, line in enumerate(lines, 1):
+            for m in _FLAG_RX.finditer(line):
+                flag = m.group(0)
+                if flag.lower() in seen:
+                    continue
+                seen.add(flag.lower())
+                loc = f"file:{r['path']}:{i}"
+                ctx.case.emit_locator(loc, "file_line", r["path"])
+                out.append({"flag": flag, "locator": loc})
+                if len(out) >= 100:
+                    return _ok({"count": len(out), "flags": out, "note": "capped at 100"}), False
+    return _ok({"count": len(out), "flags": out}), False
 
 
 def _list_files(ctx, args):
@@ -512,6 +565,7 @@ _HANDLERS = {
     "kb_read": _kb_read,
     "query_timeline": _query_timeline,
     "grep_artifact": _grep_artifact,
+    "find_flags": _find_flags,
     "list_files": _list_files,
     "read_file": _read_file,
     "mft_lookup": _mft_lookup,

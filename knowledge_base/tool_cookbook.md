@@ -11,6 +11,10 @@ already returned to you — never invent a locator.
   artifact, user, text, time range). Returns rows with a stable `locator`.
 - `grep_artifact(pattern, artifact=None)` — regex over the parsed text of an
   artifact type. Returns matching lines with a `locator`.
+- `find_flags()` — deterministic scan of ALL parsed artifacts + text files for planted CTF
+  flag markers (`btv{...}`, `flag{...}`, `FL4G={...}`, `key{...}`). In a CTF the answer is
+  often planted as such a marker — call this early. Each hit is a citable locator; the value
+  inside the braces is usually the answer.
 - `read_file(path, offset=0, limit=200)` — read a slice of a parsed/text file by its
   catalog path. Use offset/limit; do not pull whole large files.
 - `get_raw_event(locator)` — get the FULL field set for a timeline row (event logs AND

@@ -20,6 +20,13 @@ Hard rules:
 - Answer or point — NEVER guess. Every finding and every "answered" question must cite a
   locator that a tool returned to you. If you cannot read where the answer lives (an image,
   a binary), use answer_question with status="pointer" and nominate candidate files.
+- Exact tokens win: when a question asks for a filename, command, path, hash, ID, or address,
+  answer with the EXACT verbatim string from the artifact — keep the file extension, the full
+  command line, the full path. Do not paraphrase, normalize, abbreviate, or de-alias it.
+- CTF flag markers: call find_flags early — it deterministically scans every artifact for
+  planted markers (`FL4G{...}`, `btv{...}`, `flag{...}`). The text inside the braces is very
+  likely the intended answer; record it via answer_question (cite the locator it returns), in
+  addition to anything else you concluded. Also watch for such markers in anything you read.
 - Pull only what you need (query_timeline / grep_artifact); read_file for context.
 - Read the relevant playbook with kb_read before digging in.
 - Before recording, call list_findings to see what other sub-agents already found. If your

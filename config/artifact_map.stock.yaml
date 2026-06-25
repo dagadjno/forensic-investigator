@@ -1,0 +1,35 @@
+# Artifact map for STOCK AChoirX Windows collections (derived from v10.01.85 scripts).
+#
+# Built by inspecting the stock collection scripts in the AChoirX repo
+# (Scripts/Win/Win*.ACQ — each sets its output folder via `ACQ:\<code>`). NOT yet validated
+# against a real stock collection, so treat the comments as the source of truth and re-run
+# `check` once a real sample exists:
+#     python main.py check --artifact-map config/artifact_map.stock.yaml <collection_dir>
+#
+# Differences vs the DC33 custom layout (config/artifact_map.yaml):
+#   - prefetch:  Ranprog -> Prf  (stock Prf holds real .pf prefetch, not the MZ copies DC33 had)
+#   - sysinfo:   Sys     -> SYS  (case differs; dir-code matching is case-sensitive)
+#   - NEW:       PCA           (Program Compatibility Assistant exec evidence: appcompat/pca/*.txt)
+#   - Rcy (recycle bin) is commented out in the stock script, so it's usually absent
+#
+# UNCHANGED and therefore compatible: stock bundles the SAME export tools
+# (BrowsingHistoryView / BrowserDownloadsView / ExtractUSNJrnl), so Brw and RawData CSV
+# formats are identical; binary formats (EVTX/registry/SRUM/LNK/$MFT) are standard; Amcache
+# is still collected under Reg/ and matched by filename.
+artifacts:
+  Arn:     { type: amcache_autoruns,   parser: null }
+  Brw:     { type: browser,            parser: browser }
+  Conn:    { type: network,            parser: null }
+  Evt:     { type: event_logs,         parser: evtx }
+  Lnk:     { type: lnk,                parser: lnk }
+  Logs:    { type: acquisition_log,    parser: null }
+  MemDump: { type: memory,             parser: null }
+  PCA:     { type: pca_appcompat,      parser: null }   # NEW: Windows\appcompat\pca\*.txt (execution evidence)
+  Prf:     { type: prefetch,           parser: null }   # stock prefetch (.pf); DC33 called this "Ranprog"
+  Proc:    { type: process_listings,   parser: null }
+  Psh:     { type: powershell_history, parser: psh }
+  RawData: { type: mft_usn,            parser: usn }     # USNJrnl.csv (ExtractUSNJrnl) + $MFT; full $MFT not bulk-parsed
+  Reg:     { type: registry,           parser: registry }
+  Sch:     { type: scheduled_tasks,    parser: null }
+  SYS:     { type: srum_sysinfo,       parser: srum }    # stock uses "SYS"; DC33 used "Sys"
+  WMI:     { type: wmi,                parser: null }

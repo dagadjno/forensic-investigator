@@ -1,6 +1,11 @@
-# Maps the KAPE/CyLR-style triage dir-codes to artifact types and parsers.
-# Identical across all DC33 OBSIDIAN host collections, so this is write-once and
-# is the main knob to adapt to a differently-laid-out collection.
+# Maps the triage dir-codes to artifact types and parsers — the ADAPTER for a collection's
+# layout. This map matches the DC33 OBSIDIAN custom AChoirX collector.
+#
+# For a different layout, copy this file, rename/add codes, and select it with
+# `--artifact-map <path>`. A ready-made `artifact_map.stock.yaml` is provided for STOCK
+# AChoirX output. Before a full run on a new/unfamiliar collection, preflight it with:
+#     python main.py check [--artifact-map <map>] <collection_dir>
+# (reports recognized vs unknown dir-codes and whether each parser finds its inputs).
 #
 # parser: the extraction module under src/extraction (null = not yet implemented;
 #         the dir is still cataloged for coverage + the file-metadata index so the

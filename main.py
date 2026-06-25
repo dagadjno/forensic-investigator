@@ -57,6 +57,23 @@ def _qid(text: str) -> str:
     return "q" + hashlib.sha1(norm.encode("utf-8")).hexdigest()[:8]
 
 
+def _load_artifact_map(args: argparse.Namespace) -> dict:
+    """Load the artifact map — the layout adapter. Defaults to config/artifact_map.yaml;
+    --artifact-map selects a different one (e.g. for a stock-AChoirX or other collector)."""
+    path = Path(args.artifact_map) if getattr(args, "artifact_map", None) \
+        else (ROOT / "config" / "artifact_map.yaml")
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    collection = Path(args.artifact_dir).resolve()
+    if not collection.is_dir():
+        print(f"error: not a directory: {collection}", file=sys.stderr)
+        return 2
+    from src.compat import check
+    return check(collection, _load_artifact_map(args))
+
+
 def cmd_investigate(args: argparse.Namespace) -> int:
     artifact_root = Path(args.artifact_dir).resolve()
     if not artifact_root.is_dir():
@@ -69,7 +86,7 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         print(f"    {ui.c('(keep-awake on: system will not idle-sleep during this run)', 'gray')}")
 
     config = yaml.safe_load((ROOT / "config" / "config.yaml").read_text(encoding="utf-8"))
-    artifact_map = yaml.safe_load((ROOT / "config" / "artifact_map.yaml").read_text(encoding="utf-8"))
+    artifact_map = _load_artifact_map(args)
 
     out_dir = ROOT / config["paths"]["output"] / args.case_id
     kb_dir = ROOT / config["paths"]["knowledge_base"]
@@ -189,7 +206,18 @@ def main() -> int:
     inv.add_argument("--ingest-only", action="store_true",
                      help="parse artifacts into case.db and stop (no LLM investigation); "
                           "useful as a reusable base to copy per-question")
+    inv.add_argument("--artifact-map",
+                     help="path to an artifact_map.yaml for a different collection layout "
+                          "(default config/artifact_map.yaml)")
     inv.set_defaults(func=cmd_investigate)
+
+    chk = sub.add_parser("check", help="preflight: does a collection match the parsers' "
+                                       "expected layout? (no LLM, no cost)")
+    chk.add_argument("artifact_dir")
+    chk.add_argument("--artifact-map", help="artifact_map.yaml to check against "
+                                            "(default config/artifact_map.yaml)")
+    chk.set_defaults(func=cmd_check)
+
     _load_dotenv(ROOT / ".env")
     args = p.parse_args()
     return args.func(args)
