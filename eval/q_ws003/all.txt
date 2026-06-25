@@ -1,0 +1,11 @@
+Find the exact version of Advanced IP Scanner that was downloaded to workstation NAMTWS003.
+A desktop shortcut was created on namtws003, what is the filename of the shortcut?
+What user is assigned to namtws003?
+What account conducted forensics on namtws003?
+On namtws003, what directory did the threat actor put their tools in?
+On namtws003, what is domain name used for the credential exfiltration?
+On namtws003, Captin Hooks' id is ""1388695132265513060" what is his channel_id?
+On namtws003, what is the password for the Administrator account scraped by Captin Hook?
+On namtws003, what txt file was created in c:\users\public\music? **FREE HINT** `It's NOT called SilentNote.txt, nice try 😎`
+On namtws003, what exe allowed for user account control (UAC) bypass?
+What is Olivia Parker's password?

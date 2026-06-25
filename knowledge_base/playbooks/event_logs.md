@@ -27,6 +27,21 @@ the richest evidence), 4103 module logging.
 **Network (Sysmon 3):** `DestinationIp`/`DestinationPort`/`DestinationHostname` —
 corroborate C2 seen elsewhere (e.g. PowerShell history).
 **Defense evasion:** 1102 (log cleared), Defender 5001/5007, service stops (7034/7036).
+**RDP (operational):** RemoteConnectionManager **1149** and LocalSessionManager
+**21/22/25** record interactive remote sessions with the `User` + source `Address`.
+
+## Attribution: "who connected from where"
+For "which IP did <account> connect/log in from", match the **account to its logon
+event** — do NOT answer with the most-frequently-seen IP. The high-count IP is almost
+always infrastructure (a DNS/LDAP/domain controller in constant Sysmon-3 background
+chatter), not a person. Use:
+- **Security 4624** with `LogonType=10` (RDP) or `=2` (interactive) — read its
+  `IpAddress` + `TargetUserName`.
+- **RDP operational logs** — RemoteConnectionManager **1149** and LocalSessionManager
+  **21/22/25** state the `User` + source `Address` explicitly.
+- **4778/4779** reconnect/disconnect (source `ClientAddress`).
+The answer is the IP on the event that *names the account and an interactive/RDP logon* —
+even if it appears only a few times — not the noisiest IP in the timeline.
 
 ## Correlate
 Event logs are where you confirm/expand leads from other artifacts: a C2 IP from

@@ -8,10 +8,10 @@
 # The sub-agent makes many sequential tool-call rounds, so a lower effort there is
 # the single biggest speed/cost lever — raise it if you want deeper triage.
 models:
-  orchestrator: { provider: anthropic, model: claude-opus-4-8, effort: low }
-  subagent:     { provider: anthropic, model: claude-opus-4-8, effort: low }
-  report:       { provider: anthropic, model: claude-opus-4-8 }
-  verifier:     { provider: anthropic, model: claude-opus-4-8 }
+  orchestrator: { provider: anthropic, model: claude-sonnet-4-6, effort: low }
+  subagent:     { provider: anthropic, model: claude-sonnet-4-6, effort: low }
+  report:       { provider: anthropic, model: claude-sonnet-4-6 }
+  verifier:     { provider: anthropic, model: claude-sonnet-4-6 }
   # --- examples: swap a role to another provider ---
   # subagent: { provider: openai, model: gpt-5 }
   # subagent: { provider: gemini, model: gemini-2.5-pro }

@@ -1,0 +1,1 @@
+Which Active Directory reconnaissance tool did the threat actor attempt to use in this environment?

@@ -25,6 +25,15 @@ Benign-trivia answers frequently live in browser history — a searched term, a 
 profile page, a `file://` to a local document/image. If the answer is in a URL/title you
 can read, cite it; if it's a downloaded image/doc you can't read, POINT at that file.
 
+## Inferring intent from searches
+Some questions ask what a user *wanted, suspected, or was interested in* (a topic, an
+illegal activity, a hobby). The answer is usually not one literal string — it's the
+**theme of a cluster of searches/visits**. Read the related queries together and commit
+to the concept they point at (e.g. repeated "...detect financial fraud at work",
+"...boss committing fraud..." → answer **financial fraud**). When the searches clearly
+converge, answer with medium/high confidence and cite the most on-point URL — do **not**
+leave it unresolved just because no single page literally states the answer.
+
 ## get_raw_event
 Summaries show the key columns; the full CSV row (e.g. `Visited From`, `Record ID`,
 `MIME Type`, `Hash`, `Web Page URL`) is in `raw`. If a summary ends with

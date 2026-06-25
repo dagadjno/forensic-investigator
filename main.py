@@ -89,6 +89,11 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     n_files = case.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     print(f"    cataloged {n_files} files, {n_events} timeline events")
 
+    if args.ingest_only:
+        print("    --ingest-only: parsed case.db is ready; skipping investigation.")
+        case.close()
+        return 0
+
     llm = LLMClient(models=config["models"], effort=config["llm"]["effort"],
                     max_tokens=config["llm"]["max_tokens"])
 
@@ -156,6 +161,9 @@ def main() -> int:
                           "only those (expansion stays on so threads can still be followed)")
     inv.add_argument("--reingest", action="store_true",
                      help="force re-parsing artifacts even if this case was already ingested")
+    inv.add_argument("--ingest-only", action="store_true",
+                     help="parse artifacts into case.db and stop (no LLM investigation); "
+                          "useful as a reusable base to copy per-question")
     inv.set_defaults(func=cmd_investigate)
     _load_dotenv(ROOT / ".env")
     args = p.parse_args()

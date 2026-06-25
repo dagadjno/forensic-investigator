@@ -1,0 +1,15 @@
+Who appears to be the MTFIN employee owner of Workstation NAMTWS004? (answer in firstname.lastname)
+Gloria Bradley likes to stay stylish - what website focused on staying stylish was Gloria observed visiting multiple times? (*format www.website.com*)
+The Company offers a great benefits package. Based on Gloria Bradley's web traffic, what company might be the company's 401k provider?
+How many total file downloads via browser were done on asset NAMTWS04?
+Gloria Bradley looked up a recipe for this item. It was rather unusual.
+Gloria's geting on the Large Language Model train - what Single Sign-On service did Gloria use to log into a LLM service?
+Gloria Bradley goes against company policy and accesses her personal email on her company asset - what is her personal email address?
+What is the specific illegal activity suspected by the employee? (example: price fixing)
+Gloria Bradley is a busy, hard worker - she doesn't even have time to go grocery shopping. What convenience service might she be using to help her home life? (format www.website.com)
+NAMTWS04 had the account 'administrator' connect to it via an IP Address. What IP Address was it?
+NAMTWS04 saw a application package manager installed on it - what is the name of this program?
+NAMTWS04 had a built-in command run that is commonly used by threat actors to find out what account they are on a system - what command was run? (format: file.ext)
+NAMTWS04 had a powershell command run by the 'administrator' account that included an encoded command - what IP Address and Port did the command attempt to reach out to? (format xxx.xxx.xxx.xxx:xxx
+What is the name of the malware used in the attack on NAMTWS04?
+A user on NAMTWS04 created a file they wanted to keep under wraps. What is the full path to this file?

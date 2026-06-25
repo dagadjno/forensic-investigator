@@ -1,0 +1,22 @@
+[
+  {
+    "question": "What is the IP address of the command-and-control server?",
+    "expected": "13.58.222.12"
+  },
+  {
+    "question": "What was the file name of the launcher downloaded from the C2?",
+    "expected": "launcher.exe"
+  },
+  {
+    "question": "What local account was added to the Administrators group?",
+    "expected_any": ["ssm-user", "ssm_user"]
+  },
+  {
+    "question": "What remote-access tool was installed on the host?",
+    "expected": "AnyDesk"
+  },
+  {
+    "question": "What is the decoded hexadecimal-named payload?",
+    "expected": "livinabsurdism"
+  }
+]

@@ -1,0 +1,15 @@
+q01.txt	gloria.bradley	Who appears to be the MTFIN employee owner of Workstation NAMTWS004? (answer in firstname.lastname)
+q02.txt	www.sephora.com	Gloria Bradley likes to stay stylish - what website focused on staying stylish was Gloria observed visiting multiple times? (*format www.website.com*)
+q03.txt	Fidelity	The Company offers a great benefits package. Based on Gloria Bradley's web traffic, what company might be the company's 401k provider?
+q04.txt	3	How many total file downloads via browser were done on asset NAMTWS04?
+q05.txt	glue	Gloria Bradley looked up a recipe for this item. It was rather unusual.
+q06.txt	Google	Gloria's geting on the Large Language Model train - what Single Sign-On service did Gloria use to log into a LLM service?
+q07.txt	gigigraham991@gmail.com	Gloria Bradley goes against company policy and accesses her personal email on her company asset - what is her personal email address?
+q08.txt	financial fraud	What is the specific illegal activity suspected by the employee? (example: price fixing)
+q09.txt	www.instacart.com	Gloria Bradley is a busy, hard worker - she doesn't even have time to go grocery shopping. What convenience service might she be using to help her home life? (format www.website.com)
+q10.txt	10.0.1.163	NAMTWS04 had the account 'administrator' connect to it via an IP Address. What IP Address was it?
+q11.txt	chocolatey	NAMTWS04 saw a application package manager installed on it - what is the name of this program?
+q12.txt	whoami.exe	NAMTWS04 had a built-in command run that is commonly used by threat actors to find out what account they are on a system - what command was run? (format: file.ext)
+q13.txt	3.13.94.63:15388	NAMTWS04 had a powershell command run by the 'administrator' account that included an encoded command - what IP Address and Port did the command attempt to reach out to? (format xxx.xxx.xxx.xxx:xxx
+q14.txt	Empire	What is the name of the malware used in the attack on NAMTWS04?
+q15.txt	C:\Users\gloria.bradley\Desktop\Documents\Documentation\Files\Appendix\Review\Testing\Final\MTFIN\Hidden\Secret\Private\Keep Out\DO NOT LOOK\WHY ARE YOU HERE\The Truth is HERE\Real Secret\SECRET FILE.txt	A user on NAMTWS04 created a file they wanted to keep under wraps. What is the full path to this file?

