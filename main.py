@@ -102,6 +102,19 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     priority_overrides = None
     budgets = dict(config["budgets"])
 
+    # Memory (Volatility) config rides along in budgets (the runtime-settings bag the tools
+    # already read). Resolve relative paths against the repo root so the vol_run tool, which
+    # has no notion of ROOT, gets absolute paths.
+    mem = dict(config.get("memory") or {})
+    if mem.get("vol_cmd"):
+        vc = list(mem["vol_cmd"])
+        if vc and not Path(vc[0]).is_absolute() and (ROOT / vc[0]).exists():
+            vc[0] = str(ROOT / vc[0])
+        mem["vol_cmd"] = vc
+    cache = mem.get("cache_dir") or str(ROOT / config["paths"]["output"] / "_memcache")
+    mem["cache_dir"] = cache if Path(cache).is_absolute() else str(ROOT / cache)
+    budgets["memory"] = mem
+
     if explicit_only is not None:
         # Manual scope: stays scoped, no expansion unless --expand. No LLM ranking.
         budgets["allow_expansion"] = args.expand

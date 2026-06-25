@@ -112,6 +112,28 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "vol_run",
+        "description": "Run ONE Volatility3 plugin against this host's memory image for evidence that "
+                       "lives only in RAM (running processes, network connections, injected code, typed "
+                       "console commands). SLOW (tens of seconds to minutes) and cached — use targeted, "
+                       "only when disk artifacts can't answer. Pass 'contains' to filter to matching rows. "
+                       "Each row becomes a citable timeline event (source='memory'). Key plugins: "
+                       "windows.pslist/pstree/psscan (processes), windows.cmdline/cmdscan/consoles "
+                       "(what ran / was typed), windows.netscan/netstat (connections), windows.svcscan "
+                       "(services), windows.malfind (injected code), windows.dlllist/getsids/envars/sessions, "
+                       "windows.registry.printkey/userassist. NOTE: no credential-dump plugin exists — for a "
+                       "typed secret try consoles/cmdscan/cmdline. If memory is disabled or absent, POINT instead.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plugin": {"type": "string", "description": "full plugin name, e.g. 'windows.netscan.NetScan'"},
+                "contains": {"type": "string", "description": "case-insensitive substring filter on row text"},
+                "pid": {"type": "integer", "description": "optional: restrict to one process id"},
+            },
+            "required": ["plugin"],
+        },
+    },
+    {
         "name": "get_raw_event",
         "description": "Get the FULL field set for a timeline row by its locator. Event-log summaries "
                        "show only the top ~12 fields; if a summary ends with '[+N more fields — "
@@ -335,6 +357,58 @@ def _mft_lookup(ctx, args):
     return _ok({"query": args["filename"], "count": len(out), "results": out}), False
 
 
+def _vol_run(ctx, args):
+    from ..extraction import memory
+    mem = ctx.budgets.get("memory") or {}
+    if not mem.get("enabled") or not mem.get("vol_cmd"):
+        return ("memory analysis is not enabled for this run (no Volatility configured). "
+                "If the answer lives in the memory image, answer_question with status='pointer' "
+                "and nominate the MemDump image."), True
+    plugin = args["plugin"]
+    if plugin not in memory.PLUGINS:
+        return (f"unsupported plugin {plugin!r}. Choose one of: {', '.join(memory.supported())}"), True
+    row = ctx.case.conn.execute(
+        "SELECT path FROM files WHERE artifact='MemDump' AND ("
+        "lower(path) LIKE '%.raw' OR lower(path) LIKE '%.mem' OR lower(path) LIKE '%.dmp' "
+        "OR lower(path) LIKE '%.lime' OR lower(path) LIKE '%winpmem%') LIMIT 1").fetchone()
+    if row is None:
+        return ("no memory image found in this collection's MemDump bucket; "
+                "POINT at the image or resolve from disk artifacts instead."), True
+    rel = row["path"]
+    extra = ["--pid", str(args["pid"])] if args.get("pid") is not None else []
+    short = plugin.split(".")[-1].lower()
+    try:
+        rows = memory.run_plugin(ctx.root / rel, plugin, list(mem["vol_cmd"]),
+                                 mem.get("cache_dir", "output/_memcache"), extra)
+    except Exception as e:
+        return f"volatility run failed for {plugin}: {e}", True
+
+    needle = (args.get("contains") or "").lower()
+    out, materialized = [], 0
+    for i, r in enumerate(rows):
+        ef = memory.event_fields(plugin, r)
+        if needle and needle not in ef["summary"].lower():
+            continue
+        loc = f"memory:{short}:{i}"
+        if ctx.case.conn.execute("SELECT 1 FROM events WHERE locator=?", (loc,)).fetchone() is None:
+            ctx.case.add_event(source_artifact="memory",
+                               summary=ef["summary"][:600] + "  [+full row — get_raw_event]",
+                               locator=loc, ts=ef["ts"], user=ef["user"],
+                               event_type=f"memory:{short}", raw=json.dumps(r))
+            ctx.case.commit()
+        ctx.case.emit_locator(loc, "event")   # citable
+        out.append({"locator": loc, "text": ef["summary"][:300]})
+        materialized += 1
+        if materialized >= 80:
+            break
+    note = f"{len(rows)} total rows; showing {len(out)}"
+    if needle:
+        note += f" matching '{args['contains']}'"
+    if len(rows) > materialized and not needle:
+        note += " (use 'contains' to filter)"
+    return _ok({"plugin": plugin, "note": note, "rows": out}), False
+
+
 def _get_raw_event(ctx, args):
     loc = args["locator"]
     row = ctx.case.conn.execute(
@@ -441,6 +515,7 @@ _HANDLERS = {
     "list_files": _list_files,
     "read_file": _read_file,
     "mft_lookup": _mft_lookup,
+    "vol_run": _vol_run,
     "get_raw_event": _get_raw_event,
     "list_findings": _list_findings,
     "record_finding": _record_finding,

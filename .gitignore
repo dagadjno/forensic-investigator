@@ -7,9 +7,13 @@ output/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-vol/
 venv/
 .env
 
 # Editors
 .vscode/
 .idea/
+
+# Claude
+.claude

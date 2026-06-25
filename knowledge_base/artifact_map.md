@@ -10,7 +10,7 @@ The triage collection uses short dir-codes. What each holds and where answers te
 | `Evt` | Windows event logs (EVTX) | logons (4624/4625), service installs, PowerShell (4104), process creation (4688) |
 | `Lnk` | LNK / shortcut files | recently opened files + their original target paths |
 | `Logs` | Acquisition log | what the collector did and when |
-| `MemDump` | Memory image | running processes, network, injected code (needs Volatility) |
+| `MemDump` | Memory image | running processes, network, injected code, typed console commands — analyzed on demand via the `vol_run` tool (see playbooks/memory.md) |
 | `Proc` | Process / task listings | what was running at collection time |
 | `Psh` | PowerShell console history | commands users typed in PowerShell (plain text, high signal) |
 | `Ranprog` | Prefetch | programs that were run + run counts/times |

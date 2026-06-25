@@ -22,13 +22,25 @@ _PARSED_PRIORITY = 80
 _UNPARSED_PRIORITY = 30
 _QUESTION_PRIORITY = 70
 _BUCKET_PRIORITY = {
-    "Psh": 95,   # PowerShell history — what the user actually typed (source narrative)
-    "Brw": 88,   # browser history/downloads (source)
+    # Source narrative — what the user/attacker actually did (run first).
+    "Psh": 95,   # PowerShell history — what the user actually typed
+    "Brw": 88,   # browser history/downloads
+    # Execution & persistence.
     "Reg": 78,   # registry: persistence + user activity (part source, part corroborating)
-    "Sch": 74,   # scheduled tasks
-    "Ranprog": 72,  # prefetch (execution)
-    "Arn": 72,   # amcache/autoruns (execution/persistence)
-    "Evt": 55,   # event logs — corroboration, run after source buckets
+    "Arn": 76,   # amcache: program-execution evidence
+    "Sch": 74,   # scheduled tasks (persistence)
+    "Ranprog": 72,  # prefetch / run-program (execution)
+    # File-system & usage activity (parsed corroboration — curated rather than the 80
+    # parsed-fallback, so they slot just below persistence and above raw event logs).
+    "Lnk": 68,   # LNK shortcuts — files/shares opened
+    "RawData": 66,  # USN journal — file create/delete/rename timeline
+    "Sys": 64,   # SRUM — app + network usage history
+    # Event-log corroboration — run after source buckets so earlier findings exist to tie to.
+    "Evt": 55,
+    # Memory — expensive on-demand Volatility (vol_run). Deliberately LAST in open-ended /
+    # no-question mode so disk leads already exist to target plugins; when questions are
+    # given the LLM router overrides this entirely.
+    "MemDump": 25,
 }
 
 

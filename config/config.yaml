@@ -27,6 +27,17 @@ budgets:
   max_lead_depth: 4          # how deep a filed-lead chain may go
   max_total_leads: 200       # hard stop against runaway lead generation
 
+memory:
+  # On-demand Volatility3 analysis of the MemDump image, exposed as the `vol_run` tool.
+  # OPT-IN: when disabled (or Volatility not reachable), memory questions degrade to POINTER
+  # and nothing heavy runs. Keeps the core disk-triage tool fully portable.
+  enabled: true
+  # How to invoke Volatility3 on THIS machine. List form so it works for a venv exe, a
+  # system 'vol', or a docker run. A relative first element resolves against the repo root.
+  vol_cmd: [".venv-vol/Scripts/vol.exe"]
+  # Per-image plugin JSON cache (a re-run of the same plugin is free). Safe to delete.
+  cache_dir: output/_memcache
+
 paths:
   knowledge_base: knowledge_base
   output: output

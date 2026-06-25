@@ -7,6 +7,7 @@ them), and runs the available parsers to populate the normalized timeline.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,10 +28,15 @@ def _iso(ts: float) -> str:
         return ""
 
 
-def _owner(path: Path) -> str:
-    """Best-effort file owner. Windows owner lookup needs pywin32, which we don't
-    require; fall back to empty. Path components often encode the user anyway."""
-    return ""
+_USER_IN_PATH = re.compile(r"(?:^|/)Users/([^/]+)/", re.IGNORECASE)
+
+
+def _owner(rel: str) -> str:
+    """Best-effort owner derived from the path. Real Windows owner lookup needs pywin32
+    (not required), but triage paths almost always encode the user — e.g.
+    `Reg/Users/olivia.parker/NTUSER.DAT`. Returns the `Users/<name>` component, or ""."""
+    m = _USER_IN_PATH.search(rel)
+    return m.group(1) if m else ""
 
 
 def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
@@ -65,7 +71,7 @@ def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
                 continue
             rel = fp.relative_to(root).as_posix()
             case.add_file(
-                path=rel, artifact=code, name=fp.name, owner=_owner(fp),
+                path=rel, artifact=code, name=fp.name, owner=_owner(rel),
                 size=st.st_size, mtime=_iso(st.st_mtime), ctime=_iso(st.st_ctime),
                 atime=_iso(st.st_atime), is_text=fp.suffix.lower() in _TEXT_EXTS,
             )

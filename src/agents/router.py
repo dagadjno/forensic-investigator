@@ -21,8 +21,9 @@ from ..llm.base import neutral_user
 
 _SYS = ("You are the routing step of a forensic investigator. Given the artifact buckets "
         "present in a Windows triage collection and the investigation objective, RANK the "
-        "buckets by how likely each is to help, most relevant first. Include every bucket "
-        "that could plausibly matter; you may drop ones clearly irrelevant to the objective. "
+        "buckets likely to help, most relevant first, and OMIT ones unlikely to contribute "
+        "— prefer a focused subset over an exhaustive list (this set also scopes a "
+        "--relevant-only run). Keep a bucket if in doubt, but don't pad the list. "
         "Reply with ONLY a JSON array of dir-codes in priority order.")
 
 

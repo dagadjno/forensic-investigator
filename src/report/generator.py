@@ -82,7 +82,9 @@ def generate(case: CaseDB, host: str) -> str:
         L.append(f"| {c['artifact']} | {c['type']} | {'yes' if c['present'] else 'no'} "
                  f"| {'yes' if c['parser'] else 'no'} | {c['status']} |\n")
     L.append("\n_Buckets with Parsed=no were cataloged by file metadata only — answers that "
-             "depend on their parsed content cannot be confirmed yet and appear as POINTERs._\n")
+             "depend on their parsed content appear as POINTERs. Exception: `MemDump` is "
+             "analyzed on demand via the `vol_run` (Volatility) tool, so it can yield verified "
+             "`memory:` answers despite Parsed=no._\n")
     return "".join(L)
 
 

@@ -1,0 +1,18 @@
+# Optional: memory-image analysis (Volatility3), powering the agent's `vol_run` tool.
+#
+# Install into a SEPARATE venv so Volatility's dependencies stay isolated from the core
+# tool (and never have to match the tool's Python environment):
+#
+#     python -m venv .venv-vol
+#     .venv-vol/Scripts/pip install -r requirements-memory.txt   # Windows
+#     .venv-vol/bin/pip install -r requirements-memory.txt       # macOS / Linux
+#
+# Then point config.yaml -> memory.vol_cmd at that venv's `vol` executable:
+#     vol_cmd: [".venv-vol/Scripts/vol.exe"]   # Windows
+#     vol_cmd: [".venv-vol/bin/vol"]           # macOS / Linux
+#
+# Volatility3's core is pure-Python (verified on 3.10-3.14); the only dependency it
+# pulls is pefile. Symbol tables download from Microsoft on first use, then cache.
+# Skipping this entirely is fine: with memory disabled the tool degrades gracefully
+# (memory questions become POINTERs).
+volatility3==2.28.0

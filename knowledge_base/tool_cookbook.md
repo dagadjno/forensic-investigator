@@ -27,6 +27,13 @@ already returned to you — never invent a locator.
   another artifact lacks — e.g. turning a USN filename into a full path, finding a deleted
   file's path, or checking timestomping ($SI vs $FN mismatch). Results become citable
   `source="mft"` timeline rows. First call takes a few seconds (index build), then instant.
+- `vol_run(plugin, contains=None, pid=None)` — run ONE Volatility3 plugin against the
+  memory image for evidence that lives only in RAM (running processes, network connections,
+  injected code, typed console commands). SLOW and cached — use targeted, only when disk
+  artifacts can't answer. Filter with `contains`. Each row becomes a citable
+  `source="memory"` row. Key plugins: `windows.pslist/pstree/psscan`, `windows.cmdline/
+  cmdscan/consoles`, `windows.netscan/netstat`, `windows.svcscan`, `windows.malfind`. If
+  memory is disabled or absent it says so — then POINT at the image. See playbooks/memory.md.
 
 ## Record results
 - `list_findings()` — see findings already recorded (by you or other sub-agents). Check

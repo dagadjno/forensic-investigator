@@ -25,9 +25,10 @@ have a list of questions to answer about an evidence image).
 7. [Run modes (controlling cost & scope)](#7-run-modes-controlling-cost--scope)
 8. [Resuming a run](#8-resuming-a-run)
 9. [Choosing a different AI provider](#9-choosing-a-different-ai-provider)
-10. [Configuration files](#10-configuration-files)
-11. [How it works (under the hood)](#11-how-it-works-under-the-hood)
-12. [Status & roadmap](#12-status--roadmap)
+10. [Memory-image analysis (optional)](#10-memory-image-analysis-optional)
+11. [Configuration files](#11-configuration-files)
+12. [How it works (under the hood)](#12-how-it-works-under-the-hood)
+13. [Status & roadmap](#13-status--roadmap)
 
 ---
 
@@ -331,7 +332,7 @@ SDK.
 ```yaml
 # config/config.yaml — the "subagent" role does the investigating
 models:
-  subagent: { provider: anthropic, model: claude-opus-4-8 }   # default
+  subagent: { provider: anthropic, model: claude-sonnet-4-6 }  # default (use claude-opus-4-8 for max accuracy)
   # subagent: { provider: openai,  model: gpt-5 }
   # subagent: { provider: gemini,  model: gemini-2.5-pro }
 ```
@@ -350,7 +351,74 @@ your first run.**
 
 ---
 
-## 10. Configuration files
+## 10. Memory-image analysis (optional)
+
+If a collection includes a RAM capture (a `MemDump/` folder with a `.raw`/`.mem`/`.dmp`
+image), the agent can analyze it with **Volatility3** to answer questions whose answers
+only live in memory — running processes, active network connections, injected code, or
+commands typed at a console. This is **opt-in**: if you don't set it up, the tool degrades
+gracefully (memory questions become POINTERs) and everything else runs unchanged.
+
+It's deliberately kept in its **own virtual environment** so Volatility's dependencies
+never collide with the core tool's, and the tool just shells out to it.
+
+### Set it up (one time, per machine)
+
+```bash
+# from the repo root
+python -m venv .venv-vol
+
+# install Volatility into it
+.venv-vol/Scripts/pip install -r requirements-memory.txt   # Windows
+.venv-vol/bin/pip install -r requirements-memory.txt       # macOS / Linux
+```
+
+Verify it runs:
+
+```bash
+.venv-vol/Scripts/vol --help     # Windows
+.venv-vol/bin/vol --help         # macOS / Linux
+```
+
+> First time it analyzes an image it downloads Windows **symbol tables** from Microsoft
+> (needs internet once), then caches them. Volatility3's core is pure-Python, so it
+> installs cleanly even on the newest Python versions.
+
+### Turn it on
+
+In `config/config.yaml`, enable it and point `vol_cmd` at that machine's executable:
+
+```yaml
+memory:
+  enabled: true
+  vol_cmd: [".venv-vol/Scripts/vol.exe"]    # Windows
+  # vol_cmd: [".venv-vol/bin/vol"]          # macOS / Linux
+  cache_dir: output/_memcache               # per-image plugin cache (a re-run is free)
+```
+
+The first list element resolves against the repo root. It's a list, so you can also run
+Volatility via Docker instead: `vol_cmd: ["docker","run","--rm","-v","...","volatility3"]`.
+
+> **Why isn't `.venv-vol/` committed?** A venv is machine-, OS-, and Python-version
+> specific (it bakes in absolute paths and platform binaries), so committing it wouldn't
+> work on another machine anyway. The portable artifact is the **recipe** —
+> `requirements-memory.txt` plus these two commands — which rebuilds it anywhere.
+
+### What it does during a run
+
+When a question needs volatile evidence, the agent calls the `vol_run` tool on a specific
+Volatility plugin (e.g. `windows.netscan`, `windows.pslist`, `windows.malfind`,
+`windows.cmdline`/`consoles`), and each result row becomes a normal, **citable** timeline
+record (`source="memory"`). Memory is slow, so the agent uses it targeted — only when disk
+artifacts can't answer — and results are cached per plugin.
+
+> One limitation: this Volatility build has **no credential-dump plugin**
+> (no hashdump/lsadump). For a *typed* secret, the agent tries `consoles`/`cmdline`;
+> otherwise it POINTs at the image.
+
+---
+
+## 11. Configuration files
 
 | File | Purpose |
 |------|---------|
@@ -360,7 +428,7 @@ your first run.**
 
 ---
 
-## 11. How it works (under the hood)
+## 12. How it works (under the hood)
 
 ```
 Evidence folder (read-only)
@@ -385,7 +453,7 @@ what keeps it from hallucinating.
 
 ---
 
-## 12. Status & roadmap
+## 13. Status & roadmap
 
 Parsers and features marked done are working and tested on real evidence.
 
@@ -405,5 +473,6 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] The agent can also read text/CSV evidence (e.g. `Conn/CPorts.csv`, `Sys/LastActivity.csv`)
       directly, even without a dedicated parser
       (note: in this dataset `Ranprog` holds executable *copies*, not `.pf` prefetch)
-- [ ] Memory-image analysis (Volatility3)
+- [x] Memory-image analysis (Volatility3) — on-demand `vol_run` tool over an isolated venv
+      (optional; see [section 10](#10-memory-image-analysis-optional))
 - [ ] Cross-host correlation (investigate a whole domain of machines together)

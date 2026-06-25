@@ -69,11 +69,6 @@ class CaseDB:
         self.conn.execute("UPDATE coverage SET status=? WHERE artifact=?", (status, artifact))
         self.conn.commit()
 
-    def unexamined_present(self) -> list[sqlite3.Row]:
-        return self.conn.execute(
-            "SELECT * FROM coverage WHERE present=1 AND status='unexamined'"
-        ).fetchall()
-
     def coverage_rows(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM coverage ORDER BY artifact").fetchall()
 
