@@ -41,7 +41,12 @@ Hard rules:
 # dir-code -> playbook filename (without .md) to point the sub-agent at.
 _PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry",
               "Brw": "browser", "Lnk": "lnk", "RawData": "usn", "Sys": "srum",
-              "MemDump": "memory"}
+              "MemDump": "memory", "Arn": "amcache", "Conn": "network",
+              "Sch": "scheduled_tasks", "Proc": "process_listings",
+              "Ranprog": "prefetch", "Rcy": "recycle_bin", "WMI": "wmi",
+              "Logs": "acquisition_log",
+              # stock-AChoirX dir-code aliases (same playbooks cover both layouts)
+              "Prf": "prefetch", "SYS": "srum"}
 
 # Tools that count as "searching" — summarized into an auto-unresolved note if a question
 # lead ends without recording any answer.

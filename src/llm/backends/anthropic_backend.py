@@ -9,6 +9,20 @@ from __future__ import annotations
 from ..base import LLMResponse, ToolCall, is_neutral
 
 
+def _cache_last_block(messages) -> None:
+    """Put a cache breakpoint on the last content block of the latest message, so the whole
+    conversation prefix (which only grows across tool-call rounds) is read from cache on the
+    next round. Up to 4 breakpoints allowed; we use tools + system + this = 3."""
+    if not messages or not isinstance(messages[-1], dict):
+        return
+    content = messages[-1].get("content")
+    if isinstance(content, str):
+        messages[-1]["content"] = [{"type": "text", "text": content,
+                                    "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(content, list) and content and isinstance(content[-1], dict):
+        content[-1]["cache_control"] = {"type": "ephemeral"}
+
+
 class AnthropicBackend:
     provider = "anthropic"
     # env: ANTHROPIC_API_KEY
@@ -21,6 +35,7 @@ class AnthropicBackend:
 
     def complete(self, model, system, history, tools, effort, max_tokens) -> LLMResponse:
         messages = [self._to_msg(t) for t in history]
+        _cache_last_block(messages)   # cache the (only-growing) conversation prefix
         kwargs = dict(
             model=model,
             max_tokens=max_tokens,
@@ -30,10 +45,13 @@ class AnthropicBackend:
             output_config={"effort": effort},
         )
         if tools:
-            kwargs["tools"] = [
+            tool_list = [
                 {"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
                 for t in tools
             ]
+            # Cache the static, sizable tool schemas — otherwise re-sent at full price every round.
+            tool_list[-1]["cache_control"] = {"type": "ephemeral"}
+            kwargs["tools"] = tool_list
         with self._client.messages.stream(**kwargs) as stream:
             msg = stream.get_final_message()
 

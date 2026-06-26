@@ -360,6 +360,21 @@ python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --ingest-only --jobs 4
 python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --questions questions.txt --relevant-only --jobs 3
 ```
 
+Each host's step-by-step output **streams live to the console, tagged `[host]`** (and is also
+saved to `output/<host>/run.log`), so you can see it's progressing — pass `--quiet` for just a
+one-line summary as each host finishes.
+
+**Don't know which host owns which question?** Just run every question on every host (above) —
+a question is answered if *any* host answers it. When the investigation sweep finishes,
+`run_hosts.py` **auto-writes two combined views** (regenerate either anytime, read-only/no cost):
+
+- **`output/_combined/answer_sheet.md`** — a routing table (question → which host answered) plus
+  the best answer per question, collated across all hosts. (`python scripts/aggregate.py`)
+- **`output/_combined/report.html`** — a **self-contained, offline interactive dashboard**: open
+  it in a browser to **search, filter, and sort** across all hosts' Answers, Findings, and
+  Coverage (click a row to expand its cited evidence). No network or dependencies — the data is
+  embedded. (`python scripts/report_html.py --open`)
+
 ---
 
 ## 8. Resuming a run

@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from ..textutil import read_text_auto
 
 
 class ToolContext:
@@ -27,6 +28,21 @@ class ToolContext:
 
 def _ok(payload) -> str:
     return json.dumps(payload, default=str)[:12000]
+
+
+def _add_truncation(res, ctx, base_from_where, params, shown, maybe_truncated, hint,
+                    noun="matches"):
+    """If a LIMIT-capped SQL query may have hidden rows, tell the model the TRUE total so a
+    slice isn't mistaken for the whole set. The COUNT only runs when the page filled up
+    (i.e. truncation is actually possible), so small result sets pay nothing extra."""
+    if not maybe_truncated:
+        return
+    total = ctx.case.conn.execute(f"SELECT COUNT(*) {base_from_where}", params).fetchone()[0]
+    if total > shown:
+        res["truncated"] = True
+        res["total_matched"] = total
+        res["note"] = (f"showing first {shown} of {total} {noun} (sorted). "
+                       f"To reach the rest, {hint}.")
 
 
 # CTF flag markers: btv{...}, flag{...}, FL4G={...}, key{...}, ctf{...} (the answer is often
@@ -49,7 +65,9 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "query_timeline",
-        "description": "Query the normalized event timeline. Returns rows each with a 'locator' you can cite.",
+        "description": "Query the normalized event timeline. Returns rows each with a 'locator' you can "
+                       "cite. If the result is capped, the reply includes truncated=true and "
+                       "total_matched — DON'T assume you saw everything; add a filter or raise limit.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -62,7 +80,9 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "grep_artifact",
-        "description": "Regex search over parsed event text. Returns matching rows with locators.",
+        "description": "Regex search over parsed event text. Returns matching rows with locators. If "
+                       "capped, the reply includes truncated=true and total_matched — tighten the "
+                       "pattern or raise limit rather than assuming the shown rows are all of them.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -85,7 +105,9 @@ TOOL_SCHEMAS = [
     {
         "name": "list_files",
         "description": "Search the file-metadata catalog (every file incl. binaries you cannot read). "
-                       "Use to find candidate files to POINT at. Returns path/owner/size/timestamps + a 'file:' locator.",
+                       "Use to find candidate files to POINT at. Returns path/owner/size/timestamps + a "
+                       "'file:' locator. If capped, the reply includes truncated=true and total_matched — "
+                       "narrow with query=/artifact= or raise limit to see the rest.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -269,15 +291,18 @@ def _query_timeline(ctx, args):
     if args.get("contains"):
         where.append("summary LIKE ?"); params.append(f"%{args['contains']}%")
     limit = min(int(args.get("limit", 100)), 500)
+    base = f"FROM events WHERE {' AND '.join(where)}"
     rows = ctx.case.conn.execute(
-        f"SELECT ts, user, summary, locator FROM events WHERE {' AND '.join(where)} "
-        f"ORDER BY id LIMIT ?", (*params, limit),
+        f"SELECT ts, user, summary, locator {base} ORDER BY id LIMIT ?", (*params, limit),
     ).fetchall()
     out = []
     for r in rows:
         ctx.case.emit_locator(r["locator"], "event")
         out.append({"locator": r["locator"], "user": r["user"], "ts": r["ts"], "text": r["summary"]})
-    return _ok({"count": len(out), "rows": out}), False
+    res = {"count": len(out), "rows": out}
+    _add_truncation(res, ctx, base, params, len(out), len(rows) == limit,
+                    "narrow with contains=/user=/source=, or raise limit (max 500)")
+    return _ok(res), False
 
 
 def _grep_artifact(ctx, args):
@@ -288,14 +313,20 @@ def _grep_artifact(ctx, args):
         q += " WHERE source_artifact=?"; params.append(args["source"])
     q += " ORDER BY id"
     limit = min(int(args.get("limit", 100)), 500)
-    out = []
+    out, total = [], 0
     for r in ctx.case.conn.execute(q, params):
         if rx.search(r["summary"] or ""):
-            ctx.case.emit_locator(r["locator"], "event")
-            out.append({"locator": r["locator"], "user": r["user"], "text": r["summary"]})
-            if len(out) >= limit:
-                break
-    return _ok({"count": len(out), "rows": out}), False
+            total += 1   # keep counting past the cap so we can report the true total
+            if len(out) < limit:
+                ctx.case.emit_locator(r["locator"], "event")
+                out.append({"locator": r["locator"], "user": r["user"], "text": r["summary"]})
+    res = {"count": len(out), "rows": out}
+    if total > len(out):
+        res["truncated"] = True
+        res["total_matched"] = total
+        res["note"] = (f"showing first {len(out)} of {total} matches (ordered by time). "
+                       f"Tighten the pattern, or raise limit (max 500), to reach the rest.")
+    return _ok(res), False
 
 
 def _find_flags(ctx, args):
@@ -320,7 +351,7 @@ def _find_flags(ctx, args):
         try:
             if fp.stat().st_size > 5_000_000:
                 continue
-            lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = read_text_auto(fp).splitlines()
         except OSError:
             continue
         for i, line in enumerate(lines, 1):
@@ -344,9 +375,9 @@ def _list_files(ctx, args):
     if args.get("artifact"):
         where.append("artifact=?"); params.append(args["artifact"])
     limit = min(int(args.get("limit", 50)), 200)
+    base = f"FROM files WHERE {' AND '.join(where)}"
     rows = ctx.case.conn.execute(
-        f"SELECT path, owner, size, mtime, ctime, is_text FROM files WHERE {' AND '.join(where)} "
-        f"ORDER BY path LIMIT ?", (*params, limit),
+        f"SELECT path, owner, size, mtime, ctime, is_text {base} ORDER BY path LIMIT ?", (*params, limit),
     ).fetchall()
     out = []
     for r in rows:
@@ -355,19 +386,41 @@ def _list_files(ctx, args):
         out.append({"locator": loc, "path": r["path"], "owner": r["owner"],
                     "size": r["size"], "mtime": r["mtime"], "ctime": r["ctime"],
                     "readable": bool(r["is_text"])})
-    return _ok({"count": len(out), "files": out}), False
+    res = {"count": len(out), "files": out}
+    _add_truncation(res, ctx, base, params, len(out), len(rows) == limit,
+                    "narrow with query=/artifact=, or raise limit (max 200)", noun="files")
+    return _ok(res), False
+
+
+# Parsed buckets: a binary file here is ALREADY extracted into the timeline, so reading it
+# raw (or POINTing at it) is wrong — redirect to the query that serves its parsed data.
+# dir-code -> how to get at it. Covers DC33 + stock (SYS) dir-codes.
+_PARSED_BUCKET_HINT = {
+    "Evt":     'query_timeline(source="event_logs", contains=...) and get_raw_event(locator) for full fields',
+    "Reg":     'query_timeline(source="registry" or "amcache", contains=...) and get_raw_event(locator)',
+    "Brw":     'query_timeline(source="browser", contains=...)',
+    "Lnk":     'query_timeline(source="lnk", contains=...)',
+    "RawData": 'query_timeline(source="usn", contains=...) and mft_lookup(name) for paths/timestamps',
+    "Sys":     'query_timeline(source="srum", contains=...)',
+    "SYS":     'query_timeline(source="srum", contains=...)',
+}
 
 
 def _read_file(ctx, args):
     rel = args["path"]
-    row = ctx.case.conn.execute("SELECT is_text FROM files WHERE path=?", (rel,)).fetchone()
+    row = ctx.case.conn.execute("SELECT is_text, artifact FROM files WHERE path=?", (rel,)).fetchone()
     if row is None:
         return f"not in catalog: {rel}", True
     if not row["is_text"]:
+        how = _PARSED_BUCKET_HINT.get(row["artifact"])
+        if how:
+            return (f"{rel} is a parsed artifact (bucket '{row['artifact']}'), not a raw text file — "
+                    f"its contents are already in the timeline. Don't read it raw or POINT at it; "
+                    f"use {how} instead."), True
         return (f"{rel} is not a readable text file. If the answer lives here, POINT at it "
                 f"(answer_question status=pointer) rather than guessing."), True
     fp = (ctx.root / rel)
-    lines = fp.read_text(encoding="utf-8", errors="replace").splitlines()
+    lines = read_text_auto(fp).splitlines()
     offset = max(int(args.get("offset", 0)), 0)
     limit = min(int(args.get("limit", 200)), 500)
     out = []

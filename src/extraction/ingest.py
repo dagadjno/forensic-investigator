@@ -12,14 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..store.case_db import CaseDB
+from ..textutil import looks_text
 from ..ui import EMOJI, c
 from . import browser, evtx, lnk, psh, registry, srum, usn
 
 # parser name (from artifact_map.yaml) -> module with parse(case, root, dir_code)
 PARSERS = {"psh": psh, "evtx": evtx, "registry": registry, "browser": browser,
            "lnk": lnk, "usn": usn, "srum": srum}
-
-_TEXT_EXTS = {".txt", ".csv", ".log", ".ini", ".htm", ".html", ".json", ".xml", ".ps1", ".bat", ".md"}
 
 
 def _iso(ts: float) -> str:
@@ -74,7 +73,7 @@ def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
             case.add_file(
                 path=rel, artifact=code, name=fp.name, owner=_owner(rel),
                 size=st.st_size, mtime=_iso(st.st_mtime), ctime=_iso(st.st_ctime),
-                atime=_iso(st.st_atime), is_text=fp.suffix.lower() in _TEXT_EXTS,
+                atime=_iso(st.st_atime), is_text=looks_text(fp, st.st_size),
             )
     case.commit()
 

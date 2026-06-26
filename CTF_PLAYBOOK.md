@@ -148,11 +148,19 @@ python main.py investigate "<FORENSICS>/ACQ-IR-<host>-<date>" --case-id ACQ-IR-<
     --questions q_<host>.txt --relevant-only
 ```
 
-**Broad (simplest)** — run every question on every host; a question is answered if *any* host
-answers it (union). Wasteful but hands-off:
+**Broad (simplest — use this when you can't tell which host owns a question)** — run every
+question on every host; a question is answered if *any* host answers it (union). Wasteful but
+hands-off, and you **don't have to route questions to hosts first**:
 ```bash
 python run_hosts.py "<FORENSICS>/ACQ-IR-*" --questions questions.txt --relevant-only --jobs 3
 ```
+When it finishes it **auto-writes a combined answer sheet** that collates every host into one
+file — so you don't open 11 reports to find the owner:
+```
+output/_combined/answer_sheet.md   # routing table (question -> host) + best answer per question
+```
+You can regenerate it anytime (read-only, free): `python scripts/aggregate.py`. Keep cost down
+with `--relevant-only` (each host only investigates questions its data looks relevant to).
 
 Tips: batch all of a host's questions into **one** run (not one-per-run). Use `--relevant-only`
 or `--only <buckets>` to scope. The default model is Sonnet (cheap); bump `subagent` to
@@ -162,7 +170,12 @@ or `--only <buckets>` to scope. The default model is Sonnet (cheap); bump `subag
 
 ## 6. Review, flags, and the miss→fix loop
 
-- Open **`output/<host>/report.md`** → the **answer sheet** (ANSWERED / POINTER / UNRESOLVED).
+- **Multi-host run?** Open **`output/_combined/report.html`** in a browser — a searchable,
+  sortable, filterable dashboard over every host's Answers / Findings / Coverage (click a row for
+  cited evidence). Or read **`output/_combined/answer_sheet.md`** for the routing table
+  (question → which host answered). Either way, drill into a host's `output/<host>/report.md` for
+  full detail. Single host: just open its `report.md` (ANSWERED / POINTER / UNRESOLVED).
+  (Regenerate the dashboard anytime: `python scripts/report_html.py --open`.)
 - **Submit the clean HITs.** The agent auto-runs `find_flags` (planted `btv{}`/`FL4G={}` markers)
   and answers filenames/commands **verbatim**, so those should be submission-ready.
 - Work the **POINTER** (it nominated files it couldn't read — go look) and **UNRESOLVED** items
@@ -190,9 +203,31 @@ Let the tool blitz the host-artifact questions (fast, cited) so your time goes t
 
 ## 8. Cost & speed discipline
 
+**The #1 cost driver is broad mode** (every question × every host = ~11× the work). The combined
+sheet / dashboard are for *reading* results cheaply — not a reason to investigate everything
+everywhere. Prefer **route-then-target**:
+
+```bash
+# 1. parse all hosts once — free, no AI:
+python run_hosts.py "<FORENSICS>/ACQ-IR-*" --ingest-only --jobs 4
+# 2. route each question to its host (§4): host names in the text, then content match:
+python scripts/search.py <distinctive-term>          # username / IP / filename / tool
+# 3. investigate each host against ONLY its own questions (cheapest accurate path):
+python main.py investigate "<FORENSICS>/ACQ-IR-<host>-<date>" --case-id ACQ-IR-<host>-<date> \
+    --questions q_<host>.txt --relevant-only
+# 4. only for the stubborn leftovers, fall back to a broad sweep (or bump to Opus).
+```
+
+This cuts cost up to ~11× vs. broad with little accuracy loss — most hosts have no signal for
+most questions. Other levers:
+
+- **Prompt caching is automatic** (system + tools + history are cached) — no action needed; it
+  just makes every run cheaper. The parse is also reused across runs, so follow-ups are cheap.
 - **Parse once, reuse** the `case.db` (§3). Never re-parse to ask a follow-up.
-- **Batch** questions per host; don't run one-per-host-per-question.
+- **Batch** questions per host; don't run one-per-host-per-question (coverage work is shared).
 - **Scope** with `--relevant-only` / `--only`; **Sonnet** for sweeps, Opus only for hard ones.
+- **Trim budgets** in `config/config.yaml` for a cheaper sweep: `max_subagent_steps` 25→12–15,
+  `max_total_leads` 200→60 (later steps have diminishing returns).
 - **Parallelize** with `run_hosts.py --jobs N` (more jobs = faster but more API/min + CPU).
 - Idle-sleep is auto-prevented; keep the **lid open**. `NO_COLOR=1` / `NO_EMOJI=1` for plain logs.
 
