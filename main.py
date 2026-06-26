@@ -1,6 +1,6 @@
 """forensic-investigator CLI (vertical slice).
 
-    python main.py investigate <artifact_dir> --case-id NAME [--questions FILE]
+    python main.py investigate <artifact_dir> --case-id NAME [--questions FILE | --question "..."]
 
 Phases: deterministic ingest -> agentic loop (run to completion) -> report + verify.
 """
@@ -98,14 +98,24 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         print(f"{ui.EMOJI['resume']} {ui.c('Resuming', 'yellow', 'bold')} case "
               f"'{args.case_id}' (existing case.db found).")
 
-    # When --questions is given, replace the question SET (content-hashed ids). Unchanged
-    # questions keep their answers; changed/new ones become new questions; removed ones drop.
-    if args.questions:
-        case.clear_questions()
-        for line in Path(args.questions).read_text(encoding="utf-8").splitlines():
+    # --questions FILE *defines* the set (replace: a removed line drops that question).
+    # --question TEXT (inline) *adds* to the existing set, so iterative one-off questions on the
+    # same case-id accumulate instead of each run wiping the previous one. Content-hashed ids
+    # mean an unchanged question keeps its answer; add_question is idempotent (INSERT OR REPLACE).
+    inline = list(args.question or [])
+    if args.questions is not None:
+        case.clear_questions()        # the file is the source of truth for the question set
+        for line in Path(args.questions).read_text(encoding="utf-8").splitlines() + inline:
             q = line.strip()
             if q:
                 case.add_question(_qid(q), q)
+    elif inline:
+        for line in inline:           # inline-only: append; do NOT clear prior questions
+            q = line.strip()
+            if q:
+                case.add_question(_qid(q), q)
+    if args.questions is not None or inline:
+        case.backfill_answer_questions()  # a re-added question reclaims its existing answer's text
 
     print(f"{ui.EMOJI['search']} {ui.c('Ingesting', 'cyan', 'bold')} {ui.c(host, 'bold')} ...")
     ingest(case, artifact_root, artifact_map, force=args.reingest)
@@ -185,7 +195,24 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     report = write_report(case, host, out_dir)
     print(f"{ui.EMOJI['ok']} {ui.c('Done.', 'green', 'bold')} Report: {report}")
     case.close()
+    _write_html_dashboard(out_dir)
     return 0
+
+
+def _write_html_dashboard(out_dir: Path) -> None:
+    """Emit the single-host interactive HTML dashboard (report.html) next to report.md.
+    Best-effort: reuses scripts/report_html.py over this one case.db; never fails the run."""
+    import subprocess
+    html = out_dir / "report.html"
+    try:
+        subprocess.run([sys.executable, str(ROOT / "scripts" / "report_html.py"),
+                        "--glob", str(out_dir / "case.db"), "--out", str(html)],
+                       check=False, capture_output=True)
+    except Exception:
+        return
+    if html.exists():
+        print(f"{ui.EMOJI['report']} {ui.c('Dashboard', 'blue', 'bold')}: {html} "
+              f"{ui.c('(open in a browser to search/filter/sort)', 'gray')}")
 
 
 def main() -> int:
@@ -195,6 +222,8 @@ def main() -> int:
     inv.add_argument("artifact_dir")
     inv.add_argument("--case-id", required=True)
     inv.add_argument("--questions", help="text file, one CTF question per line")
+    inv.add_argument("--question", action="append", metavar="TEXT",
+                     help="an inline question string (repeatable; combinable with --questions)")
     inv.add_argument("--only", help="comma-separated dir-codes to scope coverage leads, e.g. 'Psh'")
     inv.add_argument("--expand", action="store_true",
                      help="allow the agent to file follow-up leads even under --only")

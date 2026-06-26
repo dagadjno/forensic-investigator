@@ -49,13 +49,14 @@ CREATE TABLE IF NOT EXISTS questions (
     text  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS answers (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    question_id TEXT NOT NULL,
-    status      TEXT NOT NULL,        -- answered | pointer | unresolved
-    answer      TEXT,
-    confidence  TEXT,                 -- low | medium | high
-    reasoning   TEXT,
-    created_at  TEXT NOT NULL
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id   TEXT NOT NULL,
+    status        TEXT NOT NULL,      -- answered | pointer | unresolved
+    answer        TEXT,
+    confidence    TEXT,               -- low | medium | high
+    reasoning     TEXT,
+    created_at    TEXT NOT NULL,
+    question_text TEXT DEFAULT ''     -- snapshot of the question, so an answer survives a set change
 );
 CREATE TABLE IF NOT EXISTS answer_evidence (
     answer_id  INTEGER NOT NULL REFERENCES answers(id),

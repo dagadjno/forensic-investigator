@@ -84,6 +84,7 @@ def main() -> int:
                          "only print a line as each host finishes")
     # forwarded to `main.py investigate`
     ap.add_argument("--questions")
+    ap.add_argument("--question", action="append")
     ap.add_argument("--relevant-only", action="store_true")
     ap.add_argument("--only")
     ap.add_argument("--expand", action="store_true")
@@ -99,6 +100,7 @@ def main() -> int:
 
     fwd: list[str] = []
     if args.questions:     fwd += ["--questions", args.questions]
+    for q in (args.question or []): fwd += ["--question", q]
     if args.relevant_only: fwd += ["--relevant-only"]
     if args.only:          fwd += ["--only", args.only]
     if args.expand:        fwd += ["--expand"]

@@ -38,7 +38,9 @@ def _read_host(db: str) -> tuple[str, list, dict]:
     try:
         qs = [(r["id"], r["text"]) for r in
               con.execute("SELECT id, text FROM questions ORDER BY rowid")]
-        for a in con.execute("SELECT id, question_id, status, answer, confidence, reasoning "
+        has_qt = any(r[1] == "question_text" for r in con.execute("PRAGMA table_info(answers)"))
+        qt_sel = ", question_text" if has_qt else ""
+        for a in con.execute(f"SELECT id, question_id, status, answer, confidence, reasoning{qt_sel} "
                              "FROM answers"):
             ev = [r["locator"] for r in con.execute(
                 "SELECT locator FROM answer_evidence WHERE answer_id=?", (a["id"],))]
@@ -47,7 +49,8 @@ def _read_host(db: str) -> tuple[str, list, dict]:
             answers.setdefault(a["question_id"], []).append({
                 "host": host, "status": a["status"], "answer": a["answer"] or "",
                 "confidence": a["confidence"] or "", "reasoning": a["reasoning"] or "",
-                "evidence": ev, "candidates": cand})
+                "evidence": ev, "candidates": cand,
+                "qtext": (a["question_text"] if has_qt else "") or ""})
     except sqlite3.Error:
         pass  # partial/empty db — skip what we can't read
     con.close()
@@ -71,6 +74,10 @@ def build(dbs: list[str]) -> str:
         for qid, alist in answers.items():
             if qid not in text:        # answer to a question this host alone carried
                 order.append(qid)
+            # recover text for an orphaned question from the answer's snapshot
+            snap = next((a["qtext"] for a in alist if a.get("qtext")), "")
+            if snap:
+                text.setdefault(qid, snap)
             merged.setdefault(qid, []).extend(alist)
 
     L: list[str] = []

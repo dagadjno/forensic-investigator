@@ -29,7 +29,26 @@ class CaseDB:
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(_SCHEMA.read_text(encoding="utf-8"))
+        self._migrate()
+        self.backfill_answer_questions()   # protect any currently-present questions on open
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Idempotent column adds for case.db files created before a column existed."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(answers)")}
+        if "question_text" not in cols:
+            self.conn.execute("ALTER TABLE answers ADD COLUMN question_text TEXT DEFAULT ''")
+
+    def backfill_answer_questions(self) -> int:
+        """Copy current question text onto any answers missing the snapshot, so a later set
+        replacement (clear_questions) can't orphan them into bare hash ids. Idempotent."""
+        cur = self.conn.execute(
+            "UPDATE answers SET question_text = "
+            "  (SELECT text FROM questions q WHERE q.id = answers.question_id) "
+            "WHERE (question_text IS NULL OR question_text = '') "
+            "  AND EXISTS (SELECT 1 FROM questions q WHERE q.id = answers.question_id)")
+        self.conn.commit()
+        return cur.rowcount
 
     def close(self) -> None:
         self.conn.close()
@@ -183,16 +202,23 @@ class CaseDB:
         return self.conn.execute("SELECT * FROM questions ORDER BY rowid").fetchall()
 
     def clear_questions(self) -> None:
+        # Snapshot question text onto existing answers BEFORE dropping the set, so replacing
+        # the question list never orphans an answer into a bare hash.
+        self.backfill_answer_questions()
         self.conn.execute("DELETE FROM questions")
         self.conn.commit()
 
     def add_answer(self, question_id: str, status: str, answer: str = "",
                    reasoning: str = "", evidence: list[dict] | None = None,
                    candidates: list[dict] | None = None, confidence: str = "") -> int:
+        # Snapshot the question text now (it still exists), so this answer keeps displaying its
+        # question even if a later run replaces the question set and orphans it.
+        qrow = self.conn.execute("SELECT text FROM questions WHERE id=?", (question_id,)).fetchone()
+        qtext = qrow["text"] if qrow else ""
         cur = self.conn.execute(
-            "INSERT INTO answers(question_id, status, answer, confidence, reasoning, created_at)"
-            " VALUES(?,?,?,?,?,?)",
-            (question_id, status, answer, confidence, reasoning, _now()),
+            "INSERT INTO answers(question_id, status, answer, confidence, reasoning, created_at, question_text)"
+            " VALUES(?,?,?,?,?,?,?)",
+            (question_id, status, answer, confidence, reasoning, _now(), qtext),
         )
         aid = cur.lastrowid
         for ev in evidence or []:

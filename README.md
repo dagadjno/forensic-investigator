@@ -14,6 +14,33 @@ have a list of questions to answer about an evidence image).
 
 ---
 
+## Quick start
+
+New here? The whole happy path in four steps (each is explained in detail below):
+
+```bash
+# 1. One-time setup — creates the Python env and a .env file for your API key
+python install.py
+#    ...then open the .env it created and paste in:  ANTHROPIC_API_KEY=sk-ant-...
+
+# 2. Activate the env (do this in every new terminal)
+.venv\Scripts\Activate.ps1            # Windows PowerShell
+#    macOS / Linux:  source .venv/bin/activate
+
+# 3. Run a cheap first investigation (--only Psh = just PowerShell history)
+python main.py investigate "PATH/TO/ACQ-IR-<host>" --case-id test --only Psh
+
+# 4. Read the result
+#    output/test/report.md   (open in any editor)
+#    output/test/report.html (open in a browser: searchable, sortable)
+```
+
+That third command is deliberately cheap. When you're ready: drop `--only Psh` for a **full**
+investigation, add `--questions questions.txt` to answer **specific questions**, or jump to
+**[CTF_PLAYBOOK.md](CTF_PLAYBOOK.md)** for a whole multi-host CTF. Keep reading for the details.
+
+---
+
 ## Table of contents
 
 1. [What you need](#1-what-you-need)
@@ -169,6 +196,20 @@ Then point the tool at it:
 python main.py investigate "PATH/TO/EVIDENCE" --case-id ws001 --questions questions.txt
 ```
 
+For a quick one-off you don't need a file — pass the question inline with **`--question`**
+(repeatable, and combinable with `--questions`):
+
+```bash
+python main.py investigate "PATH/TO/EVIDENCE" --case-id ws001 --question "What is the C2 IP?"
+python main.py investigate "PATH/TO/EVIDENCE" --case-id ws001 \
+    --question "What is the C2 IP?" --question "Which RAT was installed?"
+```
+
+> **`--question` adds to the case's question set; `--questions FILE` replaces it.** So asking
+> another inline question on the same `--case-id` later *keeps* the earlier ones (they
+> accumulate) — whereas re-running with a `--questions` file makes that file the new set (a
+> line you removed is dropped). Use a file when you want the file to be the source of truth.
+
 The report will contain an **answer sheet** addressing each question. When questions are
 provided, the AI also automatically figures out which evidence categories are most
 relevant to them and examines those first.
@@ -185,12 +226,17 @@ checklist, and troubleshooting — see **[CTF_PLAYBOOK.md](CTF_PLAYBOOK.md)**.
 
 ## 5. Understanding the output
 
-Each run produces a folder `output/<case-id>/` containing two things:
+Each run produces a folder `output/<case-id>/` containing:
 
 | File | What it is |
 |------|------------|
 | `report.md` | The human-readable report (open this). |
+| `report.html` | A self-contained, offline **interactive** version of the report — open in a browser to search, filter, and sort the answers/findings/coverage (click a row for cited evidence). Same dashboard the multi-host `report.html` uses, scoped to this host. |
 | `case.db` | A SQLite database with all the parsed evidence and findings (query it — see [section 6](#6-querying-the-database-yourself)). |
+
+Generated automatically each run. To **rebuild `report.html`** anytime from the existing
+`case.db` (it reads the database, not the markdown): `python scripts/report_html.py output/<case-id>`
+(add `--open` to open it). Omit the path to rebuild the cross-host combined dashboard instead.
 
 The **report** has these sections:
 
@@ -237,9 +283,20 @@ Or, with no file at all, a Python one-liner (SQLite is built into Python):
 python -c "import sqlite3; c=sqlite3.connect('output/ws001/case.db'); [print(r) for r in c.execute('SELECT severity, title FROM findings')]"
 ```
 
-> Two more helpers live in `scripts/` for multi-host CTF work: **`search.py`** (rank hosts
-> that mention a term) and **`whoanswered.py`** (which host answered which question). See
-> [CTF_PLAYBOOK.md](CTF_PLAYBOOK.md) §4.
+### The `scripts/` helper tools
+
+The repo ships a handful of small, **read-only** helpers (no AI, no cost). One reference:
+
+| Script | What it does |
+|--------|--------------|
+| `python scripts/query.py <case.db> ["SQL"]` | Run SQL against one case (read-only). No SQL → lists tables + row counts. |
+| `python scripts/search.py <term> [more…]` | Rank hosts that mention term(s) — find which host a question is about. Multiple terms = **AND** by default; `--any` = OR. |
+| `python scripts/whoanswered.py` | List which host answered which question. |
+| `python scripts/aggregate.py` | Build the cross-host **combined answer sheet** (`output/_combined/answer_sheet.md`). |
+| `python scripts/report_html.py [output/<case-id>]` | (Re)build the **interactive HTML dashboard** — one host, or all hosts combined with no argument. `--open` opens it. |
+
+The multi-host ones (`search`, `whoanswered`, `aggregate`, `report_html`) are used in
+[CTF_PLAYBOOK.md](CTF_PLAYBOOK.md) §4 to route questions to hosts and read results.
 
 ### Or use the sqlite3 command-line tool
 
@@ -600,7 +657,10 @@ Parsers and features marked done are working and tested on real evidence.
       (optional; see [section 10](#10-memory-image-analysis-optional))
 - [x] Collection-compatibility `check` command + `--artifact-map` layout adapter — incl. a
       ready-made map for stock AChoirX output (verified ~95% compatible with the DC33 layout)
-- [x] Parallel multi-host runs (`run_hosts.py`) + CTF helpers (deterministic planted-flag
-      scan via `find_flags`, verbatim-token answers)
-- [ ] Cross-host correlation (investigate a whole domain of machines together)
+- [x] Parallel multi-host runs (`run_hosts.py`, live-streamed) + CTF helpers (deterministic
+      planted-flag scan via `find_flags`, verbatim-token answers, inline `--question`)
+- [x] Cross-host combined **answer sheet** + interactive **HTML dashboard** (search / filter /
+      sort across all hosts; per-host `report.html` too) — `aggregate.py` / `report_html.py`
+- [ ] Cross-host correlation — a single agent investigating the whole domain *jointly* (today
+      each host is investigated separately and the results are combined after the fact)
 - [ ] Parser for the stock-AChoirX `PCA` bucket (Program Compatibility Assistant — execution evidence)

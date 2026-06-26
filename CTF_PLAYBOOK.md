@@ -27,11 +27,17 @@ python run_hosts.py "<FORENSICS>/ACQ-IR-*" --ingest-only --jobs 4
 python run_hosts.py "<FORENSICS>/ACQ-IR-*" --questions questions.txt --relevant-only --jobs 3
 
 # read results
-#   output/<host>/report.md   (answer sheet + findings)
-#   output/<host>/run.log     (that host's console)
+#   output/_combined/report.html    (open in a browser: search/filter/sort ALL hosts)
+#   output/_combined/answer_sheet.md (routing table: which host answered which question)
+#   output/<host>/report.md          (one host's answer sheet + findings)
+#   output/<host>/run.log            (that host's console)
 ```
 
 `<FORENSICS>` = the folder that contains the `ACQ-IR-*` host collections.
+
+> The sweep above is the **simplest** path but the **priciest** (every question × every host).
+> When you can tell which host a question belongs to, §5 / §8 show a cheaper *route-then-target*
+> flow. New to the tool? Read the README's Quick start first, then come back here.
 
 ---
 
@@ -121,7 +127,10 @@ the most hits owns it. Use the bundled **`scripts/search.py`**:
 ```bash
 python scripts/search.py olivia.parker        # -> ranks hosts by hits; top one is the owner
 python scripts/search.py 13.58.222.12         # works for IPs, filenames, tool names, …
-#   --root DIR / --glob 'PATTERN'  if your case.db files aren't under ./output/<host>/
+# multiple keywords: AND (default) = host must mention ALL; --any = OR (mention any):
+python scripts/search.py olivia.parker mimikatz       # the host involving BOTH (great for routing)
+python scripts/search.py --any AdFind SharpHound BloodHound   # any of these tools, ranked by hits
+#   quote multi-word terms; --root DIR / --glob 'PATTERN' if case.db isn't under ./output/<host>/
 ```
 
 **c) Answer evidence (after a run).** Whichever host *answered* a question is, by definition,
