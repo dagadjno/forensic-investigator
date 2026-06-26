@@ -123,7 +123,7 @@ def _conclude_unresolved(case, lead, searches, steps_done, max_steps, aborted):
     """Safety net: a QUESTION lead that ended without recording ANY answer gets an honest
     'unresolved' (with what it searched) instead of silently going blank — so an empty
     result is distinguishable from a crashed lead."""
-    qid = lead.get("question_id")
+    qid = lead["question_id"]
     if lead["source"] != "question" or not qid or case.answers_for(qid):
         return
     if aborted:

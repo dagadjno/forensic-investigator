@@ -13,6 +13,9 @@ flag submission, the POINTER/UNRESOLVED items, and the categories the tool doesn
 python install.py                       # core tool + Volatility memory env
 #   then paste ANTHROPIC_API_KEY into .env
 
+# (every new terminal) activate the core venv
+.venv\Scripts\Activate.ps1              # Windows  (POSIX: source .venv/bin/activate)
+
 # (per collection) sanity-check the layout BEFORE spending anything
 python main.py check "<FORENSICS>/ACQ-IR-<host>-<date>"
 #   stock AChoirX?  add:  --artifact-map config/artifact_map.stock.yaml
@@ -48,10 +51,18 @@ python run_hosts.py "<FORENSICS>/ACQ-IR-*" --questions questions.txt --relevant-
 
 ```bash
 git clone <repo-url> && cd forensic-investigator
-python install.py            # creates .venv + .venv-vol, installs everything
+python install.py            # creates .venv + .venv-vol, installs deps, seeds .env
 #   --no-memory  to skip Volatility (memory analysis) if you don't need it
-cp .env.example .env          # then edit: ANTHROPIC_API_KEY=sk-ant-...
+# install.py creates .env for you — open it and set: ANTHROPIC_API_KEY=sk-ant-...
+
+# activate the core venv (do this in every new terminal before running the tool):
+.venv\Scripts\Activate.ps1    # Windows (PowerShell)
+source .venv/bin/activate     # macOS / Linux
 ```
+
+> Every `python main.py ...` / `python run_hosts.py ...` command below assumes the `.venv`
+> is **activated** in that shell. (You don't activate `.venv-vol` — the tool shells out to
+> it on its own.) Re-activate after opening a new terminal.
 
 Verify:
 ```bash
@@ -104,36 +115,21 @@ Pull them out:
 grep -niE "namtws[0-9]+|namtdc[0-9]+|namtsh[0-9]+|workstation ?#?[0-9]" questions.txt
 ```
 
-**b) Content match (after the parse).** For un-named questions, grep each host's parsed data
-for a distinctive term from the question (a username, filename, IP, tool). The host with hits
-owns it:
-```python
-# save as search.py — ranks hosts that mention a term (run after the --ingest-only step)
-import sqlite3, glob, sys
-from pathlib import Path
-term = sys.argv[1]
-for db in sorted(glob.glob("output/*/case.db")):
-    c = sqlite3.connect(db)
-    n = c.execute("SELECT COUNT(*) FROM events WHERE summary LIKE ?", (f"%{term}%",)).fetchone()[0]
-    n += c.execute("SELECT COUNT(*) FROM files  WHERE path    LIKE ?", (f"%{term}%",)).fetchone()[0]
-    if n: print(f"{n:6}  {Path(db).parent.name}")
-```
+**b) Content match (after the parse).** For un-named questions, search each host's parsed
+data for a distinctive term from the question (a username, filename, IP, tool). The host with
+the most hits owns it. Use the bundled **`scripts/search.py`**:
 ```bash
-python search.py olivia.parker     # -> the host with the most hits is the owner
+python scripts/search.py olivia.parker        # -> ranks hosts by hits; top one is the owner
+python scripts/search.py 13.58.222.12         # works for IPs, filenames, tool names, …
+#   --root DIR / --glob 'PATTERN'  if your case.db files aren't under ./output/<host>/
 ```
 
 **c) Answer evidence (after a run).** Whichever host *answered* a question is, by definition,
-its host — the answer lives in that host's `case.db`:
-```python
-# save as whoanswered.py — lists which host answered each question
-import sqlite3, glob
-from pathlib import Path
-for db in sorted(glob.glob("output/*/case.db")):
-    host = Path(db).parent.name
-    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
-    for r in c.execute("SELECT q.text t, a.answer a FROM answers a JOIN questions q "
-                        "ON q.id=a.question_id WHERE a.status='answered'"):
-        print(f"{host:40} | {r['t'][:55]} -> {(r['a'] or '')[:40]}")
+its host — the answer lives in that host's `case.db`. Use **`scripts/whoanswered.py`**:
+```bash
+python scripts/whoanswered.py                 # host | question -> answer  (ANSWERED only)
+python scripts/whoanswered.py --question kerberos   # filter to matching questions
+python scripts/whoanswered.py --status any    # also show POINTER / UNRESOLVED
 ```
 
 **d) Propagate by category (your rule of thumb).** Once one question in a problem/category is

@@ -39,7 +39,7 @@ have a list of questions to answer about an evidence image).
   `ANTHROPIC_API_KEY` (or an OpenAI / Gemini key — see [section 9](#9-choosing-a-different-ai-provider)).
   Running an investigation makes paid API calls, so a key with some credit is required.
 - **A folder of Windows evidence** to investigate. This tool is built for
-  **KAPE / CyLR-style triage collections**: a folder with subfolders named by short
+  **AChoirX-style triage collections**: a folder with subfolders named by short
   codes like `Evt` (event logs), `Reg` (registry), `Psh` (PowerShell history), etc. A
   typical folder is named like `ACQ-IR-<hostname>-<date>`. The folder is only ever **read**
   — the tool never modifies your evidence.
@@ -219,25 +219,27 @@ Everything the tool parsed and concluded lives in `output/<case-id>/case.db`, a 
 **SQLite** database. You can explore it directly — useful for digging deeper than the
 report, or verifying a citation.
 
-### Easiest: a Python one-liner
+### Easiest: the bundled `query.py` helper
 
-Python includes SQLite, so no install needed. From the project folder:
+The repo ships **`scripts/query.py`** — it takes the database path as an argument (so it
+works on any host's `case.db`) and opens it **read-only** (a stray write can't touch your
+evidence). With no SQL it lists the tables and row counts:
+
+```bash
+python scripts/query.py output/ws001/case.db                                  # list tables
+python scripts/query.py output/ws001/case.db "SELECT severity, title FROM findings"
+python scripts/query.py output/ws001/case.db "SELECT * FROM answers" --limit 5
+```
+
+Or, with no file at all, a Python one-liner (SQLite is built into Python):
 
 ```bash
 python -c "import sqlite3; c=sqlite3.connect('output/ws001/case.db'); [print(r) for r in c.execute('SELECT severity, title FROM findings')]"
 ```
 
-For anything more than a quick peek, use a small script (save as `query.py`):
-
-```python
-import sqlite3, sys
-con = sqlite3.connect("output/ws001/case.db")
-con.row_factory = sqlite3.Row
-for row in con.execute(sys.argv[1]):
-    print(dict(row))
-```
-
-Run it like: `python query.py "SELECT * FROM findings"`.
+> Two more helpers live in `scripts/` for multi-host CTF work: **`search.py`** (rank hosts
+> that mention a term) and **`whoanswered.py`** (which host answered which question). See
+> [CTF_PLAYBOOK.md](CTF_PLAYBOOK.md) §4.
 
 ### Or use the sqlite3 command-line tool
 
@@ -507,8 +509,8 @@ python main.py check "PATH/TO/COLLECTION"
 ```
 
 It reports which folder codes are recognized, whether each parser finds its expected input
-(and for the CSV parsers, whether the columns match), and a verdict — **compatible /
-partial / unrecognized**. Run this first on a collection from a new source: the parsers
+(and for the CSV parsers, whether the columns match), and a verdict — **COMPATIBLE /
+PARTIAL / UNRECOGNIZED**. Run this first on a collection from a new source: the parsers
 degrade *silently* on an unfamiliar layout (skip missing files, emit 0), so an almost-empty
 result can otherwise look like it "worked." `check` makes that explicit.
 
