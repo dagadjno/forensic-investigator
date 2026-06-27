@@ -151,8 +151,12 @@ def main() -> int:
                            "--root", out_root]).returncode == 0:
             print(f"    {ui.EMOJI['report']} combined sheet: "
                   f"{ui.c('output/_combined/answer_sheet.md', 'bold')}")
-        if subprocess.run([args.python, str(ROOT / "scripts" / "report_html.py"),
-                           "--root", out_root]).returncode == 0:
+        html_cmd = [args.python, str(ROOT / "scripts" / "report_html.py"), "--root", out_root]
+        if args.questions:   # number the combined dashboard by the asked order (file)
+            html_cmd += ["--questions", args.questions]
+        for qq in (args.question or []):   # ...and/or inline --question order
+            html_cmd += ["--question", qq]
+        if subprocess.run(html_cmd).returncode == 0:
             print(f"    {ui.EMOJI['report']} interactive dashboard: "
                   f"{ui.c('output/_combined/report.html', 'bold')} (search/filter/sort)")
     return 1 if failed else 0

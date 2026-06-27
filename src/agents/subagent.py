@@ -23,6 +23,13 @@ Hard rules:
 - Exact tokens win: when a question asks for a filename, command, path, hash, ID, or address,
   answer with the EXACT verbatim string from the artifact — keep the file extension, the full
   command line, the full path. Do not paraphrase, normalize, abbreviate, or de-alias it.
+- Multiple matches → rank, don't cherry-pick: when a question targets a TIME, a COUNT, or
+  "which one" and several events plausibly qualify, do NOT silently commit to the first you
+  find. Enumerate the candidates, then record the best-supported one as the primary answer
+  (confidence="high" ONLY if the evidence uniquely points to it; otherwise "medium"/"low"),
+  and record the other strong candidates as ADDITIONAL answer_question calls (each citing its
+  own event locator). Distinct values are kept, not treated as duplicates — let the analyst
+  disambiguate from a ranked set rather than guessing for them.
 - CTF flag markers: call find_flags early — it deterministically scans every artifact for
   planted markers (`FL4G{...}`, `btv{...}`, `flag{...}`). The text inside the braces is very
   likely the intended answer; record it via answer_question (cite the locator it returns), in
@@ -55,7 +62,12 @@ _SEARCH_TOOLS = {"query_timeline", "grep_artifact", "read_file", "list_files",
                  "mft_lookup", "vol_run", "get_raw_event"}
 
 
-def _system(case: CaseDB, host: str) -> str:
+def _system(case: CaseDB, host: str, kb_dir: Path) -> str:
+    pb_dir = kb_dir / "playbooks"
+    pbs = sorted(p.stem for p in pb_dir.glob("*.md")) if pb_dir.is_dir() else []
+    pb_block = (f"\nAvailable playbooks (the ONLY ones — organized by ARTIFACT, not attack "
+                f"technique): kb_read('playbooks/<name>.md') where <name> is one of: "
+                f"{', '.join(pbs)}.\n") if pbs else ""
     qs = case.questions()
     if qs:
         lines = []
@@ -70,13 +82,13 @@ def _system(case: CaseDB, host: str) -> str:
                    + "\n".join(lines) + "\n")
     else:
         q_block = "\nNo specific questions provided; surface anything notable as findings.\n"
-    return f"{_RULES}\n\nHost: {host}\n{q_block}"
+    return f"{_RULES}\n\nHost: {host}\n{pb_block}{q_block}"
 
 
 def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         lead, host: str, budgets: dict) -> dict:
     ctx = ToolContext(case, artifact_root, kb_dir, lead_depth=lead["depth"], budgets=budgets)
-    system = _system(case, host)
+    system = _system(case, host, kb_dir)
 
     task = f"LEAD: {lead['title']}"
     if lead["reason"]:
@@ -113,7 +125,9 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         for call in resp.tool_calls:
             out, is_err = dispatch(ctx, call.name, call.input)
             tag = (c("ERR", "red", "bold") + " ") if is_err else ""
-            print(f"       {c('step ' + str(step), 'gray')}: {tag}{c(call.name, 'cyan')}"
+            # answer_question stands out in reddish pink; other tools stay cyan.
+            name_styles = ("pink", "bold") if call.name == "answer_question" else ("cyan",)
+            print(f"       {c('step ' + str(step), 'gray')}: {tag}{c(call.name, *name_styles)}"
                   f"({_brief(call.input)})", flush=True)
             if call.name in _SEARCH_TOOLS and not is_err:
                 searches.append(f"{call.name}({_brief(call.input)})")

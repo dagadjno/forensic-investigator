@@ -214,7 +214,10 @@ TOOL_SCHEMAS = [
         "name": "answer_question",
         "description": "Resolve a CTF question. answered -> answer + non-empty evidence (verified citations). "
                        "pointer -> candidate_files + reasoning (you cannot read it; never guess). "
-                       "unresolved -> reasoning describing what you searched.",
+                       "unresolved -> reasoning describing what you searched. "
+                       "For an AMBIGUOUS question (a time/count/'which one' with several plausible "
+                       "events), call this once PER candidate — distinct values are kept, not "
+                       "rejected as duplicates; rank them with the confidence field.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -278,7 +281,9 @@ def _kb_read(ctx, args):
     if ctx.kb_dir.resolve() not in fp.parents and fp != ctx.kb_dir.resolve():
         return "refused: path outside knowledge base", True
     if not fp.is_file():
-        return f"no such kb doc: {doc}", True
+        avail = sorted(p.relative_to(ctx.kb_dir).as_posix() for p in ctx.kb_dir.rglob("*.md"))
+        return (f"no such kb doc: {doc}. Playbooks are organized by ARTIFACT, not attack "
+                f"technique. Available docs: {', '.join(avail)}"), True
     return fp.read_text(encoding="utf-8")[:12000], False
 
 
@@ -406,11 +411,31 @@ _PARSED_BUCKET_HINT = {
 }
 
 
+def _resolve_path(ctx, rel: str):
+    """Tolerant catalog lookup: exact path wins; otherwise an UNAMBIGUOUS near-match is
+    auto-resolved (covers a dropped trailing char like 'Recon.tx'->'Recon.txt', or a wrong
+    directory for a uniquely-named file). Returns (resolved_path_or_None, suggestions)."""
+    conn = ctx.case.conn
+    if conn.execute("SELECT 1 FROM files WHERE path=?", (rel,)).fetchone():
+        return rel, []
+    cands = [r[0] for r in conn.execute("SELECT path FROM files WHERE path LIKE ? LIMIT 6", (rel + "%",))]
+    base = rel.rsplit("/", 1)[-1]
+    if base:
+        for r in conn.execute("SELECT path FROM files WHERE name=? LIMIT 6", (base,)):
+            if r[0] not in cands:
+                cands.append(r[0])
+    if len(cands) == 1:
+        return cands[0], []          # one obvious match -> auto-correct
+    return None, cands[:5]           # none or ambiguous -> suggest, let the agent pick
+
+
 def _read_file(ctx, args):
-    rel = args["path"]
+    asked = args["path"]
+    rel, suggestions = _resolve_path(ctx, asked)
+    if rel is None:
+        hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+        return f"not in catalog: {asked}.{hint}", True
     row = ctx.case.conn.execute("SELECT is_text, artifact FROM files WHERE path=?", (rel,)).fetchone()
-    if row is None:
-        return f"not in catalog: {rel}", True
     if not row["is_text"]:
         how = _PARSED_BUCKET_HINT.get(row["artifact"])
         if how:
@@ -428,7 +453,10 @@ def _read_file(ctx, args):
         loc = f"file:{rel}:{n + 1}"
         ctx.case.emit_locator(loc, "file_line", rel)
         out.append({"locator": loc, "line": n + 1, "text": lines[n]})
-    return _ok({"path": rel, "total_lines": len(lines), "rows": out}), False
+    res = {"path": rel, "total_lines": len(lines), "rows": out}
+    if rel != asked:
+        res["note"] = f"'{asked}' not in catalog; read closest match '{rel}' instead"
+    return _ok(res), False
 
 
 _BACKSLASH_RUN = re.compile(r"\\{2,}")

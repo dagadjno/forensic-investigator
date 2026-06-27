@@ -72,7 +72,30 @@ def _read_host(db: str) -> dict:
     return out
 
 
-def build_model(dbs: list[str]) -> dict:
+def _qid(text: str) -> str:
+    """Same content-hash id main.py assigns a question — lets a master questions.txt define the
+    canonical numbering by matching each line to its question id."""
+    import hashlib
+    return "q" + hashlib.sha1(" ".join(text.lower().split()).encode("utf-8")).hexdigest()[:8]
+
+
+def _order_qids(questions_file: str | None, inline: list[str] | None) -> list[str] | None:
+    """Canonical question order (your asked order) from a master --questions FILE and/or inline
+    --question strings — matching how main.py builds the set: file lines first, then inline.
+    Works regardless of whether the questions entered the case via a file or via --question."""
+    lines: list[str] = []
+    if questions_file:
+        lines += Path(questions_file).read_text(encoding="utf-8").splitlines()
+    lines += inline or []
+    out, seen = [], set()
+    for line in lines:
+        t = line.strip()
+        if t and _qid(t) not in seen:
+            seen.add(_qid(t)); out.append(_qid(t))
+    return out or None
+
+
+def build_model(dbs: list[str], order_qids: list[str] | None = None) -> dict:
     hosts = [_read_host(db) for db in dbs]
     # Pass 1: gather the real question TEXT from every host first, so it always wins over the
     # qid-hash fallback regardless of host order (a question may live on one host while an
@@ -104,6 +127,13 @@ def build_model(dbs: list[str]) -> dict:
         findings += h["findings"]
         coverage += h["coverage"]
 
+    # If a master question order was supplied (the order you asked them), number/order by it;
+    # questions not in the master keep their first-seen order, after the listed ones.
+    if order_qids:
+        pos = {qid: i for i, qid in enumerate(order_qids)}
+        first_seen = {qid: i for i, qid in enumerate(qorder)}
+        qorder.sort(key=lambda q: (pos.get(q, len(pos) + first_seen[q])))
+
     # locator -> {ATT&CK techniques} from findings, to correlate an answer with a finding.
     loc_tech: dict[str, set] = {}
     for f in findings:
@@ -112,7 +142,7 @@ def build_model(dbs: list[str]) -> dict:
                 loc_tech.setdefault(loc, set()).add(f["technique"])
 
     answers = []
-    for qid in qorder:
+    for i, qid in enumerate(qorder, 1):   # i = the question's number (order it was added)
         rows = by_q.get(qid, [])
         agg = max((r["status"] for r in rows), key=lambda s: _STATUS_RANK.get(s, 0), default="unresolved")
         ans_hosts = sorted({r["host"] for r in rows if r["status"] == "answered"})
@@ -133,7 +163,7 @@ def build_model(dbs: list[str]) -> dict:
         if agg == "pointer":
             ncand = sum(len(r["candidates"]) for r in rows)
             note = note or (f"{ncand} candidate file(s) to inspect" if ncand else "")
-        answers.append({"qid": qid, "question": qtext.get(qid, qid), "status": agg,
+        answers.append({"num": i, "qid": qid, "question": qtext.get(qid, qid), "status": agg,
                         "answer": " | ".join(distinct), "hosts": ans_hosts,
                         "confidence": best_conf, "rows": rows,
                         "cites": len(ev_locs), "tech": ", ".join(techs), "note": note[:160]})
@@ -157,7 +187,15 @@ def main() -> int:
     ap.add_argument("--glob", dest="pattern", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--open", dest="open_", action="store_true", help="open the result in a browser")
+    ap.add_argument("--questions", metavar="FILE",
+                    help="master questions file: number/order the # column by the order in this "
+                         "file (your asked order). Useful for the combined view, where questions "
+                         "come from several hosts.")
+    ap.add_argument("--question", action="append", metavar="TEXT",
+                    help="inline question(s) defining the asked order (repeatable; combinable with "
+                         "--questions). Use if you asked via --question rather than a file.")
     args = ap.parse_args()
+    order_qids = _order_qids(args.questions, args.question)
 
     if args.case_dir:                       # single-host: rebuild that host's report.html
         p = Path(args.case_dir)
@@ -173,7 +211,7 @@ def main() -> int:
             sys.exit(f"no case.db found under {pattern!r} — run investigations first.")
         out = Path(args.out) if args.out else Path(args.root) / "_combined" / "report.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(build_model(dbs)), encoding="utf-8")
+    out.write_text(render(build_model(dbs, order_qids)), encoding="utf-8")
     print(f"wrote {out}  ({len(dbs)} host(s))")
     if args.open_:
         webbrowser.open(out.resolve().as_uri())
@@ -203,10 +241,13 @@ table{width:100%;border-collapse:collapse;margin-top:0}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
 th{position:sticky;top:118px;background:var(--panel);cursor:pointer;user-select:none;font-size:12px;color:var(--mut);white-space:nowrap}
 th:hover{color:var(--fg)} th .ar{opacity:.5;font-size:10px}
-tr.row:hover{background:#12161c} tr.row{cursor:pointer}
-td.cv,th.cv{width:24px;text-align:center;color:var(--mut);padding-left:6px;padding-right:0}
-.caret{display:inline-block;font-size:11px;color:var(--mut)}
-tr.row.open{background:#12161c} tr.row.open .caret{color:var(--fg)}
+tr.row:hover{background:#12161c}
+td.cv,th.cv{width:32px;text-align:center;padding:6px 0 6px 8px}
+td.cv{cursor:pointer;user-select:none}
+.caret{display:inline-block;font-size:20px;line-height:1;color:var(--fg)}
+td.cv:hover .caret{color:#fff}
+tr.row.open{background:#12161c}
+.num{text-align:right;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
 td.q{max-width:520px;overflow-wrap:anywhere;word-break:break-word} td.ans{max-width:460px;overflow-wrap:anywhere;word-break:break-word}
 .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
 .s-answered{background:rgba(63,185,80,.15);color:var(--ans)}
@@ -218,7 +259,7 @@ td.q{max-width:520px;overflow-wrap:anywhere;word-break:break-word} td.ans{max-wi
 .host{display:inline-block;background:var(--panel2);border:1px solid var(--bd);border-radius:4px;padding:0 6px;margin:1px 3px 1px 0;font-size:11px;color:var(--mut)}
 .detail{background:#0c0f13}.detail td{padding:10px 16px;overflow-wrap:anywhere}
 .detail h4{margin:8px 0 4px;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-code{background:#0b1722;border:1px solid #143;border-radius:4px;padding:1px 6px;font-size:12px;color:#7ee787;word-break:break-all}
+code{background:#17121f;border:1px solid #3a2d5c;border-radius:4px;padding:1px 6px;font-size:12px;color:#d2a8ff;word-break:break-all}
 .ev{margin:3px 0;line-height:1.5}
 .exq{color:var(--mut);font-size:12px}
 .muted{color:var(--mut)} .none{color:var(--mut);padding:24px;text-align:center}
@@ -248,15 +289,16 @@ const codeList = a => a.length? a.map(e=>{const loc=Array.isArray(e)?e[0]:e, ex=
 const TABS = {
   answers: {
     label: 'Answers',
-    cols: [['question','Question'],['status','Status'],['answer','Answer'],['hosts','Answered by'],['confidence','Conf.']],
+    cols: [['num','#'],['question','Question'],['status','Status'],['answer','Answer'],['hosts','Answered by'],['confidence','Conf.']],
     rows: () => DATA.answers,
     cell: (r,c)=>({
+      num:`<td class="num">${r.num}</td>`,
       question:`<td class="q">${E(r.question)}</td>`,
       status:`<td><span class="pill s-${r.status}">${r.status}</span></td>`,
       answer:`<td class="ans">${r.answer?E(r.answer):'<span class="muted">—</span>'}${r.note?`<div class="note">${E(r.note)}</div>`:''}</td>`,
       hosts:`<td>${hostsPill(r.hosts)||'<span class="muted">—</span>'}</td>`,
       confidence:`<td class="conf">${E(r.confidence)||'—'}</td>`}[c]),
-    key:(r,c)=>({question:r.question,status:_STATUS(r.status),answer:r.answer,hosts:r.hosts.join(','),confidence:_CONF(r.confidence)}[c]),
+    key:(r,c)=>({num:r.num,question:r.question,status:_STATUS(r.status),answer:r.answer,hosts:r.hosts.join(','),confidence:_CONF(r.confidence)}[c]),
     text:r=>[r.question,r.answer,r.tech,r.note,r.hosts.join(' '),...r.rows.flatMap(x=>[x.answer,x.reasoning,...x.evidence.flat(),...x.candidates])].join(' ').toLowerCase(),
     detail:r=>`<div class="dsum"><span class="pill s-${r.status}">${r.status}</span>`
         +(r.confidence?`<span class="dk">confidence</span> ${E(r.confidence)}`:'')
@@ -306,7 +348,7 @@ const _STATUS=s=>({answered:3,pointer:2,unresolved:1}[s]||0);
 const _CONF=c=>({high:3,medium:2,low:1}[(c||'').toLowerCase()]||0);
 const _SEV=s=>({critical:5,high:4,medium:3,low:2,info:1}[(s||'').toLowerCase()]||0);
 
-let tab='answers', sortCol='status', sortDir=-1, q='', fStatus='', fHost='', fSev='';
+let tab='answers', sortCol='num', sortDir=-1, q='', fStatus='', fHost='', fSev='';  // answers: newest # first
 
 const _single = DATA.hosts.length===1;
 document.getElementById('title').textContent =
@@ -319,7 +361,7 @@ document.getElementById('meta').innerHTML =
 
 document.getElementById('tabs').innerHTML = Object.keys(TABS).map(k=>
   `<div class="tab" data-k="${k}">${TABS[k].label}</div>`).join('');
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{tab=t.dataset.k;sortCol=TABS[tab].cols[0][0];sortDir=1;buildFilters();render();});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{tab=t.dataset.k;sortCol=TABS[tab].cols[0][0];sortDir=(tab==='answers'?-1:1);buildFilters();render();});
 
 function buildFilters(){
   let h = `<input id="q" placeholder="Search…" value="${E(q)}">`;
@@ -369,7 +411,8 @@ function render(){
       const d=document.createElement('tr'); d.className='detail'; d.style.display='none';
       d.innerHTML=`<td colspan="${span}">${T.detail(r)}</td>`;
       body.appendChild(d);
-      tr.onclick=()=>{const open=d.style.display==='none';
+      // expand/collapse ONLY when the triangle cell is clicked (not the whole row)
+      tr.querySelector('.cv').onclick=()=>{const open=d.style.display==='none';
         d.style.display=open?'table-row':'none';
         tr.classList.toggle('open',open);
         tr.querySelector('.caret').textContent=open?'▾':'▸';};
