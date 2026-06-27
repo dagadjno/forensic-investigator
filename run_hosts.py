@@ -76,7 +76,10 @@ def _run_one(host_dir: Path, py: str, fwd: list[str], stream: bool, color: str):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run investigations across hosts in parallel.")
-    ap.add_argument("pattern", help="glob for host collection dirs, e.g. '.../ACQ-IR-*'")
+    ap.add_argument("patterns", nargs="+", metavar="PATTERN",
+                    help="one or more globs/paths for host collection dirs. One glob for all "
+                         "(e.g. '.../ACQ-IR-*'), or list specific hosts: "
+                         "'.../ACQ-IR-dc01-*' '.../ACQ-IR-ws003-*'")
     ap.add_argument("--jobs", type=int, default=3, help="max concurrent hosts (default 3)")
     ap.add_argument("--python", default=sys.executable, help="python used to run main.py")
     ap.add_argument("--quiet", action="store_true",
@@ -93,9 +96,15 @@ def main() -> int:
     ap.add_argument("--artifact-map")
     args = ap.parse_args()
 
-    hosts = sorted(Path(p) for p in glob.glob(args.pattern) if Path(p).is_dir())
+    # Union every pattern's matches (dedup, keep first-seen order) so you can name specific hosts.
+    hosts, seen = [], set()
+    for pat in args.patterns:
+        for p in sorted(glob.glob(pat)):
+            rp = str(Path(p).resolve())
+            if Path(p).is_dir() and rp not in seen:
+                seen.add(rp); hosts.append(Path(p))
     if not hosts:
-        print(f"no host directories matched: {args.pattern}", file=sys.stderr)
+        print(f"no host directories matched: {args.patterns}", file=sys.stderr)
         return 2
 
     fwd: list[str] = []

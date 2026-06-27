@@ -431,7 +431,27 @@ def _read_file(ctx, args):
     return _ok({"path": rel, "total_lines": len(lines), "rows": out}), False
 
 
+_BACKSLASH_RUN = re.compile(r"\\{2,}")
+
+
+def _resolve_locator(loc: str, exists_fn) -> str:
+    """Return the canonical stored form of a locator. The model often OVER-escapes the
+    backslashes in registry key paths (`\\` -> `\\\\`), so an exact match fails even though
+    the locator is real. If the literal form isn't known, collapse backslash runs and use
+    that — registry paths never contain doubled backslashes, so this is safe."""
+    if exists_fn(loc):
+        return loc
+    collapsed = _BACKSLASH_RUN.sub(r"\\", loc)
+    if collapsed != loc and exists_fn(collapsed):
+        return collapsed
+    return loc
+
+
 def _check_evidence(ctx, evidence):
+    # Canonicalize each cited locator in place (fixes over-escaped registry backslashes) so a
+    # real citation isn't wrongly rejected AND the stored evidence matches the events table.
+    for e in evidence:
+        e["locator"] = _resolve_locator(e["locator"], ctx.case.locator_exists)
     bad = [e["locator"] for e in evidence if not ctx.case.locator_exists(e["locator"])]
     return bad
 
@@ -516,7 +536,8 @@ def _vol_run(ctx, args):
 
 
 def _get_raw_event(ctx, args):
-    loc = args["locator"]
+    loc = _resolve_locator(args["locator"], lambda L: ctx.case.conn.execute(
+        "SELECT 1 FROM events WHERE locator=?", (L,)).fetchone() is not None)
     row = ctx.case.conn.execute(
         "SELECT summary, raw FROM events WHERE locator=?", (loc,)).fetchone()
     if row is None:

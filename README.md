@@ -417,6 +417,15 @@ python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --ingest-only --jobs 4
 python run_hosts.py "PATH/TO/FORENSICS/ACQ-IR-*" --questions questions.txt --relevant-only --jobs 3
 ```
 
+**Want only specific hosts?** Pass more than one glob/path — they're unioned, so you can name
+exactly the hosts you want (any naming, no shared pattern required):
+
+```bash
+# just these two hosts:
+python run_hosts.py "PATH/.../ACQ-IR-dc01-*" "PATH/.../ACQ-IR-ws003-*" --questions questions.txt --jobs 2
+# or a character-class glob when they share a pattern:  ".../ACQ-IR-ws00[34]-*"
+```
+
 Each host's step-by-step output **streams live to the console, tagged `[host]`** (and is also
 saved to `output/<host>/run.log`), so you can see it's progressing — pass `--quiet` for just a
 one-line summary as each host finishes.
@@ -631,6 +640,10 @@ needs them — and their results join the same cited timeline (`source="mft"` / 
 memory dumps). Trusted forensic parsers extract structured records first; the AI only
 reasons over that normalized data and must cite a real record for every claim. This is
 what keeps it from hallucinating.
+
+> **Engineers:** for the full AI architecture — agent topology, how the orchestrator and
+> sub-agents coordinate through the Case File, the tool layer, citation enforcement, and the
+> LLM plumbing — see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ---
 
