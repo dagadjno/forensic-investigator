@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -31,6 +33,45 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+class _Tee:
+    """Mirror everything printed to the console into a run.log, one timestamped line at a
+    time. Two cleanups keep the file readable: ANSI color codes are stripped, and transient
+    '\\r' progress redraws (the in-place parse counters) are dropped — only newline-terminated
+    lines are written, each prefixed with the wall-clock time it completed. The console still
+    gets the original, colored, live-updating stream untouched."""
+
+    def __init__(self, console, logfile):
+        self._console = console
+        self._log = logfile
+        self._buf: list[str] = []
+
+    def write(self, s: str) -> int:
+        self._console.write(s)
+        for ch in _ANSI_RE.sub("", s):
+            if ch == "\r":          # carriage return: terminal would overwrite -> reset line
+                self._buf.clear()
+            elif ch == "\n":        # line complete: commit it to the log with a timestamp
+                self._log.write(time.strftime("[%H:%M:%S] ") + "".join(self._buf) + "\n")
+                self._log.flush()
+                self._buf.clear()
+            else:
+                self._buf.append(ch)
+        return len(s)
+
+    def flush(self) -> None:
+        self._console.flush()
+        self._log.flush()
+
+    def isatty(self) -> bool:
+        return self._console.isatty()
+
+    def __getattr__(self, name):
+        return getattr(self._console, name)
 
 
 def _load_dotenv(path: Path) -> None:
@@ -89,8 +130,21 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     artifact_map = _load_artifact_map(args)
 
     out_dir = ROOT / config["paths"]["output"] / args.case_id
+    out_dir.mkdir(parents=True, exist_ok=True)
     kb_dir = ROOT / config["paths"]["knowledge_base"]
     host = _host_name(artifact_root)
+
+    # Tee this run's console output to out_dir/run.log (timestamped). main.py owns the log now,
+    # so a direct single-host run gets the same persistent, full-investigation log that the
+    # multi-host driver used to capture — not just the ingest phase. _finish() restores stdout.
+    _orig_stdout = sys.stdout
+    _log_fh = (out_dir / "run.log").open("w", encoding="utf-8")
+    sys.stdout = _Tee(_orig_stdout, _log_fh)
+
+    def _finish(rc: int) -> int:
+        sys.stdout = _orig_stdout
+        _log_fh.close()
+        return rc
 
     case = CaseDB(out_dir / "case.db")
     resuming = case.get_meta("ingested") == "1"
@@ -128,7 +182,7 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         print(f"    {ui.EMOJI['ok']} {ui.c('--ingest-only', 'green')}: parsed case.db is ready; "
               f"skipping investigation.")
         case.close()
-        return 0
+        return _finish(0)
 
     llm = LLMClient(models=config["models"], effort=config["llm"]["effort"],
                     max_tokens=config["llm"]["max_tokens"])
@@ -196,7 +250,7 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     print(f"{ui.EMOJI['ok']} {ui.c('Done.', 'green', 'bold')} Report: {report}")
     case.close()
     _write_html_dashboard(out_dir)
-    return 0
+    return _finish(0)
 
 
 def _write_html_dashboard(out_dir: Path) -> None:

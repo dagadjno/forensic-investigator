@@ -44,7 +44,11 @@ _SEC = {
     # anti-forensics / audit tampering
     1102, 1100, 4719, 4616,
 }
-_SYS = {7045, 7040, 7036, 7034, 7031, 7022, 7009, 7001, 7000, 104, 6005, 6006, 6008}
+_SYS = {7045, 7040, 7036, 7034, 7031, 7026, 7024, 7023, 7022, 7011, 7009, 7001, 7000, 104, 6005, 6006, 6008}
+# 7023/7024 = service "terminated with the following error" / "service-specific error";
+# 7026 = boot/system-start driver(s) failed to load; 7011 = service start timeout. These are
+# the canonical "service failed/terminated WITH AN ERROR" events — distinct from 7031/7034
+# ("terminated unexpectedly") — so a question about an errored service can actually be answered.
 _PS = {4103, 4104, 400, 403, 600, 800}
 _SYSMON = set(range(1, 30))
 _TASK = {106, 140, 141, 200, 201, 202, 4698, 4699, 4700, 4701, 4702}
@@ -52,6 +56,10 @@ _RDP = {21, 22, 23, 24, 25, 39, 40, 1149}
 _WINRM = {6, 91, 168}
 _DEFENDER = {1006, 1007, 1008, 1009, 1116, 1117, 1118, 1119, 5001, 5004, 5007, 5010, 5012}
 _WMI = {5857, 5859, 5860, 5861}  # provider load + consumer/filter/binding (WMI persistence)
+# Application.evtx: app crashes (a process *crashing* — e.g. a payload — is logged here, NOT in
+# Security/Sysmon) + software installs via Windows Installer. 1000 Application Error, 1001 WER,
+# 1002 hang, 1026 .NET runtime error; 11707/11708/1033/1034 MsiInstaller, 1040/1042 installer txn.
+_APP = {1000, 1001, 1002, 1026, 11707, 11708, 1033, 1034, 1040, 1042}
 
 # (filename substring, family label, interesting-id set). FIRST MATCH WINS, so specific
 # channels must precede the generic "security.evtx"/"system.evtx" entries — e.g. the SMB
@@ -73,7 +81,9 @@ _CHANNELS = [
     ("smbserver%4security", "SMB", None),                             # share auth/access (server)
     ("smbclient%4security", "SMB", None),                             # share auth/access (client)
     ("directory service.evtx", "DirSvc", None),                       # AD directory changes (DCs)
-    # Core logs last (their substrings are generic).
+    # Core logs last (their substrings are generic). "application.evtx" is specific enough not
+    # to collide with the Application-Experience / Application Server channels above.
+    ("application.evtx", "Application", _APP),   # app crashes (e.g. payload) + MSI installs
     ("security.evtx", "Security", _SEC),
     ("system.evtx", "System", _SYS),
 ]
@@ -155,13 +165,21 @@ def _parse_xml(xml: str):
                 elif sln == "Security":
                     user = s.attrib.get("UserID", "")
         elif ln in ("EventData", "UserData"):
+            unnamed = 0
             for d in el.iter():
+                dln = _local(d.tag)
                 name = d.attrib.get("Name")
                 val = (d.text or "").strip()
                 if name and val:
                     data[name] = val
-                elif ln == "UserData" and val:
-                    data[_local(d.tag)] = val
+                elif ln == "UserData" and val and dln != "UserData":
+                    data[dln] = val
+                elif ln == "EventData" and dln == "Data" and not name and val:
+                    # Classic providers (Application Error, MsiInstaller, SCM) emit UNNAMED
+                    # <Data> elements. Without this they'd be silently dropped — capture them
+                    # positionally so e.g. an app-crash's faulting module is searchable.
+                    unnamed += 1
+                    data[f"Data{unnamed}"] = val
     return eid, computer, time, user, data
 
 
@@ -207,6 +225,16 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
 
     base = root / dir_code
     files = [fp for fp in base.rglob("*.evtx") if fp.is_file()]
+    # Safeguard: pyevtx is the pure-Python fallback — much slower AND it can silently truncate
+    # large logs. Hitting it almost always means the project .venv (which ships the fast Rust
+    # `evtx`) isn't active, i.e. you're running under the wrong interpreter. Make that loud
+    # rather than letting a 30x-slower, lossy parse pass unnoticed.
+    if files and backend == "pyevtx":
+        print(c(f"    {EMOJI['warn']} EVTX backend is 'pyevtx' (pure-Python): far slower and it "
+                f"can silently DROP records from large logs.", "yellow", "bold"), flush=True)
+        print(c("      You are likely not in the project .venv. Activate it "
+                "(.venv\\Scripts\\Activate.ps1, or run_hosts.py --python .venv\\Scripts\\python.exe) "
+                "or `pip install evtx`, then re-run with --reingest.", "yellow"), flush=True)
     parsed = emitted = 0
     for fp in files:
         family, ids = _channel_for(fp.name)

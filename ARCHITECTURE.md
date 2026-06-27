@@ -451,8 +451,10 @@ The agent topology above is **per host** (one `case.db` per host). Multi-host wo
 process parallelism, not a higher-order agent:
 
 - **`run_hosts.py`** — runs `main.py investigate` for N hosts as separate processes
-  (`ThreadPoolExecutor`, bounded by `--jobs`), tees each host's streamed output to
-  `output/<host>/run.log`, then auto-generates the combined views.
+  (`ThreadPoolExecutor`, bounded by `--jobs`), streaming each host's tagged output to the
+  console. Each child `main.py` writes its own **timestamped** `output/<host>/run.log` (the log
+  is owned by the investigate process, so single-host runs get one too). Then it auto-generates
+  the combined views.
 - **`scripts/aggregate.py`** — reads every host's `case.db` and writes a combined answer sheet
   (routing table + best answer per question).
 - **`scripts/report_html.py`** — the interactive cross-host (or single-host) dashboard.

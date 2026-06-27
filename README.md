@@ -290,7 +290,7 @@ The repo ships a handful of small, **read-only** helpers (no AI, no cost). One r
 | Script | What it does |
 |--------|--------------|
 | `python scripts/query.py <case.db> ["SQL"]` | Run SQL against one case (read-only). No SQL → lists tables + row counts. |
-| `python scripts/search.py <term> [more…]` | Rank hosts that mention term(s) — find which host a question is about. Multiple terms = **AND** by default; `--any` = OR. |
+| `python scripts/search.py <term> [more…]` | Find which host a question is about. Multiple terms = **AND** by default — only entries where **one row** contains *all* terms; prints per-host counts + a bucket breakdown. Add `--show` for the matching rows + locators; `--any` = OR. |
 | `python scripts/whoanswered.py` | List which host answered which question. |
 | `python scripts/aggregate.py` | Build the cross-host **combined answer sheet** (`output/_combined/answer_sheet.md`). |
 | `python scripts/report_html.py [output/<case-id>]` | (Re)build the **interactive HTML dashboard** — one host, or all hosts combined with no argument. `--open` opens it. |
@@ -426,9 +426,9 @@ python run_hosts.py "PATH/.../ACQ-IR-dc01-*" "PATH/.../ACQ-IR-ws003-*" --questio
 # or a character-class glob when they share a pattern:  ".../ACQ-IR-ws00[34]-*"
 ```
 
-Each host's step-by-step output **streams live to the console, tagged `[host]`** (and is also
-saved to `output/<host>/run.log`), so you can see it's progressing — pass `--quiet` for just a
-one-line summary as each host finishes.
+Each host's step-by-step output **streams live to the console, tagged `[host]`**, so you can
+see it's progressing — pass `--quiet` for just a one-line summary as each host finishes. Every
+run (single-host or parallel) also writes a complete, **timestamped** `output/<host>/run.log`.
 
 **Don't know which host owns which question?** Just run every question on every host (above) —
 a question is answered if *any* host answers it. When the investigation sweep finishes,
@@ -656,6 +656,7 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] `Psh` (PowerShell history) parser
 - [x] `Evt` (Windows event logs / EVTX) parser — Rust-backed (`evtx`), fast; curated
       high-value channels & IDs incl. Kerberos/NTLM, AD group management, file-share access,
+      service install/termination, app crashes + MSI installs (Application log),
       WMI/BITS/AppLocker/RDP-client/SMB/Directory-Service
 - [x] `Reg` (registry) parser — persistence, accounts, software, devices, user activity
 - [x] Amcache parser (`source="amcache"`) — program execution evidence + SHA1 hashes

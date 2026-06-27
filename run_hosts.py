@@ -62,15 +62,15 @@ def _run_one(host_dir: Path, py: str, fwd: list[str], stream: bool, color: str):
     # -u: unbuffered child so its step lines reach us live (not block-buffered when piped).
     cmd = [py, "-u", str(ROOT / "main.py"), "investigate", str(host_dir), "--case-id", case_id, *fwd]
     t0 = time.time()
-    with (out_dir / "run.log").open("w", encoding="utf-8") as fh:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8", errors="replace", bufsize=1)
-        for line in proc.stdout:          # tee each line: always to run.log, live to console if streaming
-            fh.write(line)
-            if stream:
-                with _PRINT_LOCK:
-                    print(f"{tag} {line.rstrip()}", flush=True)
-        proc.wait()
+    # main.py writes out_dir/run.log itself now (timestamped, full investigation). Here we only
+    # relay the child's live output to the console so concurrent hosts can be followed.
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", bufsize=1)
+    for line in proc.stdout:
+        if stream:
+            with _PRINT_LOCK:
+                print(f"{tag} {line.rstrip()}", flush=True)
+    proc.wait()
     return case_id, proc.returncode, time.time() - t0
 
 

@@ -47,7 +47,7 @@ def _read_host(db: str) -> dict:
         # question_text snapshot may be absent on a case.db not yet opened by the new code.
         has_qt = any(r[1] == "question_text" for r in con.execute("PRAGMA table_info(answers)"))
         qt_sel = ", question_text" if has_qt else ""
-        for a in con.execute(f"SELECT id, question_id, status, answer, confidence, reasoning{qt_sel} FROM answers"):
+        for a in con.execute(f"SELECT id, question_id, status, answer, confidence, reasoning, created_at{qt_sel} FROM answers"):
             ev = [[r["locator"], r["excerpt"] or ""] for r in con.execute(
                 "SELECT locator, excerpt FROM answer_evidence WHERE answer_id=?", (a["id"],))]
             cand = [f"{r['path']}{(' — ' + r['reason']) if r['reason'] else ''}" for r in con.execute(
@@ -55,6 +55,7 @@ def _read_host(db: str) -> dict:
             out["answers"].append({"host": host, "qid": a["question_id"], "status": a["status"],
                                    "answer": a["answer"] or "", "confidence": a["confidence"] or "",
                                    "reasoning": a["reasoning"] or "", "evidence": ev, "candidates": cand,
+                                   "created": a["created_at"] or "",
                                    "qtext": (a["question_text"] if has_qt else "") or ""})
         for f in con.execute("SELECT id, severity, confidence, attack_technique, title, description FROM findings"):
             ev = [[r["locator"], r["excerpt"] or ""] for r in con.execute(
@@ -127,12 +128,19 @@ def build_model(dbs: list[str], order_qids: list[str] | None = None) -> dict:
         findings += h["findings"]
         coverage += h["coverage"]
 
-    # If a master question order was supplied (the order you asked them), number/order by it;
-    # questions not in the master keep their first-seen order, after the listed ones.
+    # Numbering. Default: by ANSWER RECENCY so the newest answer gets the highest # (and old
+    # orphaned answers from prior runs sink to low #s instead of piling up at the top). A
+    # question's recency is its most recent answer's created_at; never-answered questions have
+    # none and sort first (lowest #s), keeping their asked order.
+    first_seen = {qid: i for i, qid in enumerate(qorder)}
     if order_qids:
+        # Explicit master order (the order you asked them) overrides recency when supplied.
         pos = {qid: i for i, qid in enumerate(order_qids)}
-        first_seen = {qid: i for i, qid in enumerate(qorder)}
         qorder.sort(key=lambda q: (pos.get(q, len(pos) + first_seen[q])))
+    else:
+        recency = {qid: max((a.get("created", "") for a in rows), default="")
+                   for qid, rows in by_q.items()}
+        qorder.sort(key=lambda q: (recency.get(q, ""), first_seen[q]))
 
     # locator -> {ATT&CK techniques} from findings, to correlate an answer with a finding.
     loc_tech: dict[str, set] = {}

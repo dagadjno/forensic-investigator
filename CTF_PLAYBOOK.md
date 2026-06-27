@@ -30,7 +30,7 @@ python run_hosts.py "<FORENSICS>/ACQ-IR-*" --questions questions.txt --relevant-
 #   output/_combined/report.html    (open in a browser: search/filter/sort ALL hosts)
 #   output/_combined/answer_sheet.md (routing table: which host answered which question)
 #   output/<host>/report.md          (one host's answer sheet + findings)
-#   output/<host>/run.log            (that host's console)
+#   output/<host>/run.log            (that host's console, timestamped — every run writes one)
 ```
 
 `<FORENSICS>` = the folder that contains the `ACQ-IR-*` host collections.
@@ -127,9 +127,11 @@ the most hits owns it. Use the bundled **`scripts/search.py`**:
 ```bash
 python scripts/search.py olivia.parker        # -> ranks hosts by hits; top one is the owner
 python scripts/search.py 13.58.222.12         # works for IPs, filenames, tool names, …
-# multiple keywords: AND (default) = host must mention ALL; --any = OR (mention any):
-python scripts/search.py olivia.parker mimikatz       # the host involving BOTH (great for routing)
-python scripts/search.py --any AdFind SharpHound BloodHound   # any of these tools, ranked by hits
+# multiple keywords: AND (default) = ONE entry (row) must contain ALL terms; --any = OR:
+python scripts/search.py olivia.parker 13.58.222.12     # the exact event/file tying both together
+python scripts/search.py olivia.parker mimikatz --show  # --show prints the matching rows + locators
+python scripts/search.py --any AdFind SharpHound BloodHound   # host mentions ANY, ranked by hits
+#   default prints per-host counts + a bucket breakdown (event_logs / browser / file:Reg …);
 #   quote multi-word terms; --root DIR / --glob 'PATTERN' if case.db isn't under ./output/<host>/
 ```
 
