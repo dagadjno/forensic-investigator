@@ -57,23 +57,140 @@ output every run. `main.py :: cmd_investigate` runs the three in sequence per ho
 
 There is **no direct message-passing between agents.** The orchestrator and every sub-agent
 communicate exclusively through one SQLite database — a classic **blackboard architecture**.
-This is the single most important structural fact about the system.
+This is the single most important structural fact about the system. Because all state is
+durable in SQLite, the run is **resumable** (re-run with the same `--case-id`) and
+**idempotent** (parsing is skipped if `meta.ingested=1`).
 
-Schema (`src/store/schema.sql`, wrapped by `src/store/case_db.py :: CaseDB`):
+Schema in `src/store/schema.sql`, wrapped by `src/store/case_db.py :: CaseDB`. Every table and
+column below, with **real example rows** from a DC33 host investigation.
 
-| Table | Role |
-|-------|------|
-| `events` | The normalized timeline. One row per parsed record; columns `ts, source_artifact, user, summary, locator, raw`. **`locator` is the stable citation handle.** |
-| `files` | Metadata for **every** file (incl. binaries the tool can't read) — powers POINTER answers. |
-| `coverage` | One row per artifact bucket: `present`, `parser`, `status` (`unexamined → analyzed`). The run isn't done until no bucket is `unexamined`. |
-| `leads` | **The work queue / engine.** `source` ∈ {question, coverage, agent}, `priority`, `depth`, `status` (open→in_progress→closed), `dedup_key UNIQUE`. |
-| `findings` / `finding_evidence` | The findings ledger and its citations. |
-| `questions` / `answers` / `answer_evidence` / `answer_candidates` | CTF questions and their resolutions (answered/pointer/unresolved). |
-| `emitted_locators` | **Every locator any tool has returned.** The citation-enforcement table. |
-| `meta` | Key/value (e.g. `ingested=1`) for idempotent ingest + resume. |
+### The locator (the citation handle)
 
-Because all state is durable in SQLite, the run is **resumable** (re-run with the same
-`--case-id`) and **idempotent** (parsing is skipped if `meta.ingested=1`).
+A **locator** is the stable string a read tool returns and a finding/answer cites. Format is
+`"<source>:<relpath>:<record-key>"`, where the `<source>` prefix equals the row's
+`source_artifact` and the record-key depends on the source:
+
+| source | record-key | example locator |
+|--------|-----------|-----------------|
+| `event_logs` | EVTX record id | `event_logs:Evt/.../Security.evtx:269584` |
+| `powershell_history` | line number | `powershell_history:Psh/Users/<u>/.../ConsoleHost_history.txt:1` |
+| `registry` | key path | `registry:Reg/Config/SAM:SAM\Domains\Account\Users\Names\Administrator` |
+| `amcache` | entry id | `amcache:Reg/.../Amcache.hve:1234` |
+| `browser` | csv row | `browser:Brw/History.csv:42` |
+| `usn` | USN number | `usn:RawData/.../USNJrnl.csv:5916816` |
+| `srum` | row id | `srum:Sys/.../SRUDB.dat:88` |
+| `mft` *(on-demand)* | `$MFT` record no. | `mft:RawData/C/$MFT:248126` |
+| `memory` *(on-demand)* | result index | `memory:netscan:7` |
+| `file` *(catalog)* | — or `:<line>` | `file:Conn/CPorts.csv` · `file:Logs/run.log:88` |
+
+### `events` — the normalized timeline (the bulk of the DB)
+
+One row per parsed record. This is what `query_timeline`/`grep_artifact` search.
+
+| Column | Holds | Example |
+|--------|-------|---------|
+| `id` | autoincrement PK | `34019` |
+| `ts` | ISO-8601 event time, or `""` if the artifact has none | `2025-06-29T00:45:51.439092Z` |
+| `source_artifact` | which parser produced it (= locator prefix) | `powershell_history` |
+| `host` | host name if the record carries one | `namtws004.mtfin.local` |
+| `user` | user/SID associated with the event | `administrator.MTFIN`, `S-1-5-18` |
+| `event_type` | parser sub-type tag | `ps_command`, `BITS:306`, `mft:file` |
+| `summary` | the human/agent-readable line (capped ~600 chars; may end `[+N more fields — get_raw_event]`) | `get-content 'C:\Program Files (x86)\ossec-agent\ossec.conf'` |
+| `locator` | stable citation handle (see above) | `powershell_history:Psh/Users/administrator.MTFIN/.../ConsoleHost_history.txt:1` |
+| `raw` | full field set as JSON (event logs/registry) or the raw line; backs `get_raw_event` | `{"EventID":4720,"TargetSid":"S-1-5-...",...}` |
+
+`idx_events_source` indexes `source_artifact` (the most common filter).
+
+### `files` — metadata for EVERY file (incl. unparseable binaries)
+
+Powers POINTER answers and `mft_lookup`/`read_file` path resolution.
+
+| Column | Holds | Example |
+|--------|-------|---------|
+| `path` (PK) | path relative to the artifact root | `RawData/$UsnJrnl_$J.bin` |
+| `artifact` | owning dir-code | `RawData` |
+| `name` | basename | `$UsnJrnl_$J.bin` |
+| `owner` | best-effort owner from the path (`Users/<x>/`) | `gloria.bradley` |
+| `size` | bytes | `39071552` |
+| `mtime`/`ctime`/`atime` | filesystem MAC times (ISO-8601) | `2025-07-02T01:17:35+00:00` |
+| `is_text` | 1 if readable as text (content-sniffed) → `read_file` works; else POINT only | `0` |
+
+### `coverage` — the bucket manifest (drives termination)
+
+| Column | Holds | Example |
+|--------|-------|---------|
+| `artifact` (PK) | dir-code | `Arn` |
+| `type` | artifact type from the map | `amcache_autoruns` |
+| `parser` | parser module name, or NULL (catalog-only) | `NULL` |
+| `present` | 1 if the folder exists in this collection | `1` |
+| `status` | `unexamined → triaged → analyzed`; run ends when none are `unexamined` | `analyzed` |
+
+### `leads` — the work queue (the engine)
+
+| Column | Holds | Example |
+|--------|-------|---------|
+| `id` (PK) | order tiebreaker | `1` |
+| `title` | the task | `Answer: A user on NAMTWS04 created a file they wanted to keep under wraps. …` |
+| `reason` | why (for agent-filed leads) | `""` |
+| `source` | `question` \| `coverage` \| `agent` | `question` |
+| `question_id` | set when `source=question` | `q870b206e` |
+| `artifact` | target bucket when `source=coverage` | `NULL` |
+| `priority` | higher = sooner (question 70; coverage from the per-bucket table / router) | `70` |
+| `depth` | agent-filed lead chain depth (capped by `max_lead_depth`) | `0` |
+| `status` | `open → in_progress → closed` | `closed` |
+| `dedup_key` | `UNIQUE` — `source\|qid\|artifact\|title` — blocks re-filing the same lead | `question\|q870b206e\|\|answer: a user on namtws04 …` |
+
+### `findings` + `finding_evidence` — the ledger
+
+| `findings` column | Holds | Example |
+|-------------------|-------|---------|
+| `id` (PK) | finding id | `1` |
+| `title` | short title | `User hid file in deeply obfuscated directory structure` |
+| `severity` | `info\|low\|medium\|high\|critical` | `medium` |
+| `confidence` | `low\|medium\|high` | `high` |
+| `attack_technique` | ATT&CK id (dedup key with a shared locator) | `T1564` |
+| `description` | free text | `gloria.bradley created a deeply nested folder tree …` |
+| `status` | ledger status | `corroborated` |
+| `created_at` | ISO-8601 | `2026-06-26T15:08:09.6…` |
+
+`finding_evidence`: `finding_id` → (`locator`, `excerpt`). Example:
+`(1, "mft:RawData/C/$MFT:248126", "\Users\gloria.bradley\…\DO NOT LOOK\…")`.
+
+### `questions` / `answers` / `answer_evidence` / `answer_candidates`
+
+`questions`: `id` = content hash `q<sha1[:8]>` of the normalized text · `text` = the question.
+Example: `("q79044b52", "What SID of the first account created by the compromised account…?")`.
+
+| `answers` column | Holds | Example |
+|------------------|-------|---------|
+| `id` (PK) | answer id | `1` |
+| `question_id` | FK to `questions.id` | `q870b206e` |
+| `status` | `answered \| pointer \| unresolved` | `answered` |
+| `answer` | the answer text (verbatim token when applicable) | `C:\Users\gloria.bradley\…\DO NOT LOOK` |
+| `confidence` | `low\|medium\|high` | `high` |
+| `reasoning` | rationale; for unresolved, **what was searched** | `User gloria.bradley created a deeply nested folder …` |
+| `created_at` | ISO-8601 | `2026-06-26T15:08:09.6…` |
+| `question_text` | snapshot of the question text → answer survives a question-set change | `A user on NAMTWS04 created a file …` |
+
+- `answer_evidence`: `answer_id` → (`locator`, `excerpt`) — for **answered**.
+- `answer_candidates`: `answer_id` → (`path`, `reason`) — for **pointer** (paths must exist in
+  `files`). Example: `(7, "Brw/Downloads/proof.png", "screenshot likely shows the answer")`.
+
+### `emitted_locators` — the citation registry (anti-hallucination)
+
+Every locator any tool has returned. A finding/answer may only cite a locator present here.
+
+| Column | Holds | Example |
+|--------|-------|---------|
+| `locator` (PK) | the emitted locator | `event_logs:Evt/.../Microsoft-Windows-PowerShell%4Operational.evtx:191054` |
+| `kind` | `event` \| `file` \| `file_line` | `event` |
+| `detail` | optional (e.g. the file path for `file_line`) | `""` |
+
+### `meta` — case state
+
+Key/value. `("ingested","1")` flags a completed parse (idempotent ingest / resume). `meta`
+plus the schema's `IF NOT EXISTS` + `CaseDB._migrate` (e.g. the `answers.question_text` column
+add) let an older `case.db` upgrade in place when reopened.
 
 ---
 
@@ -88,11 +205,10 @@ Because all state is durable in SQLite, the run is **resumable** (re-run with th
    hives stay binary.
 3. Runs each available parser for present, parseable buckets. Parsers
    (`psh, evtx, registry, browser, lnk, usn, srum`) emit normalized rows into `events` via
-   `case.add_event(...)`, each with a **stable `locator`** of the form
-   `"<source>:<relpath>:<record-id|line|keypath>"`.
+   `case.add_event(...)`, each with a **stable `locator`** (see §3).
 
 Two artifacts are deliberately **not** bulk-parsed (too large): the full `$MFT` and the memory
-image. They're queried lazily during layer B (see §7, on-demand tools).
+image. They're queried lazily during layer B (see §6, on-demand tools).
 
 Parsers read fields **by name** (DictReader / EVTX `EventData Name=` / ESE columns), so new
 columns or fields in a newer collector are ignored, not fatal.
@@ -187,17 +303,94 @@ priority in the orchestrator applies.
 ## 6. The tool layer (`src/tools/registry.py`)
 
 Tools are the *only* way a sub-agent touches data. `TOOL_SCHEMAS` is sent to the model;
-`dispatch(ctx, name, input)` runs the handler and returns `(text, is_error)`. A handler
-exception is caught and surfaced to the model as a tool error (never crashes the run).
+`dispatch(ctx, name, input)` runs the handler and returns `(text, is_error)`. Result payloads
+are JSON capped at 12 KB. Every **read** tool calls `case.emit_locator()` on what it returns
+(so it becomes citable); every **write** tool validates citations. A handler exception is
+caught and surfaced to the model as a tool-error string — it never crashes the run.
 
 | Category | Tools |
 |----------|-------|
-| **Read / search** | `kb_read` (playbooks), `query_timeline` (filtered timeline), `grep_artifact` (regex over event text), `find_flags` (deterministic CTF-marker scan), `list_files` (file catalog), `read_file` (text slice; refuses binaries, and **redirects** to `query_timeline` for parsed buckets), `get_raw_event` (full field set for a row) |
-| **On-demand (lazy, expensive)** | `mft_lookup` (resolve a name→path + `$SI/$FN` times from `$MFT`), `vol_run` (one Volatility3 plugin against the memory image) |
-| **Write / control** | `record_finding`, `answer_question` (answered/pointer/unresolved), `file_lead` (enqueue new work), `list_findings`, `mark_examined` |
+| **Read / search** | `kb_read`, `query_timeline`, `grep_artifact`, `find_flags`, `list_files`, `read_file`, `get_raw_event` |
+| **On-demand (lazy, expensive)** | `mft_lookup`, `vol_run` |
+| **Write / control** | `list_findings`, `record_finding`, `answer_question`, `file_lead`, `mark_examined` |
 
-Result sets carry a **truncation signal** (`truncated`, `total_matched`) so the model never
-mistakes a capped page for the whole set.
+### Read / search
+
+**`kb_read(doc)`** → playbook/reference text (≤12 KB). `doc` is relative to `knowledge_base/`,
+e.g. `"playbooks/registry.md"`. Path-escape guarded. No locators.
+
+**`query_timeline(source?, user?, contains?, limit=100)`** → `{count, rows:[{locator, user, ts,
+text}], truncated?, total_matched?}`. SQL filter over `events` (`source_artifact=`, `user LIKE`,
+`summary LIKE %contains%`), `ORDER BY id`, **cap 500**. No offset — narrow with filters. Emits a
+locator per row. The primary "pull only what matters" tool.
+
+**`grep_artifact(pattern, source?, limit=100)`** → `{count, rows:[{locator, user, text}],
+truncated?, total_matched?}`. Case-insensitive **regex** over `events.summary` (optionally one
+source). Counts all matches for `total_matched`; **cap 500**. Emits per row.
+
+**`find_flags()`** → `{count, flags:[{flag, locator}]}`. Deterministic scan of all `events`
+(summary+raw) **and** readable text files for CTF markers `btv{…}/flag{…}/FL4G={…}/key{…}/ctf{…}`
+(`_FLAG_RX`); dedup by value, cap 100. Emits the first locator per flag. No LLM. Call early.
+
+**`list_files(query?, artifact?, limit=50)`** → `{count, files:[{locator:"file:<path>", path,
+owner, size, mtime, ctime, readable}], truncated?, total_matched?}`. Searches the `files`
+catalog (`path LIKE`, `artifact=`), **cap 200**. Emits `file:` locators — how you find candidate
+files to POINT at.
+
+**`read_file(path, offset=0, limit=200)`** → `{path, total_lines, rows:[{locator:"file:<path>:
+<line>", line, text}]}`. Slices a **text** file (BOM-aware decode). **Cap 500** lines. Refuses
+binaries; for a file in a *parsed* bucket (Evt/Reg/Brw/Lnk/RawData/Sys) it returns a redirect to
+`query_timeline`/`get_raw_event` instead of suggesting POINT. Emits `file_line` locators.
+
+**`get_raw_event(locator)`** → `{locator, fields}` (full JSON field set from `events.raw`) or
+`{locator, summary}` if no extra fields. Use when a summary ends `[+N more fields …]`. The
+locator lookup is **backslash-tolerant** (`_resolve_locator` collapses over-escaped registry
+`\\`) so a real citation isn't rejected on a formatting quirk. Emits the (canonical) locator.
+
+### On-demand (lazy, expensive — materialize into `events`)
+
+These query the artifacts too big to bulk-parse and write their results into the *same*
+`events` table with citable locators, so the rest of the pipeline treats them like any other
+row. So **"the memory agent" is not a separate process** — it's the generic sub-agent, pointed
+at `playbooks/memory.md`, calling `vol_run`.
+
+**`mft_lookup(filename, limit=20)`** → `{query, count, results:[{locator:"mft:…", path, deleted,
+size, si_times, fn_times}]}`. Resolves a name (substring, case-insensitive) against the `$MFT` —
+full path + `$SI/$FN` MAC times (timestomp check). First call builds an in-process index (~secs);
+**cap 100**. Materializes `source="mft"` rows and emits their locators.
+
+**`vol_run(plugin, contains?, pid?)`** → Volatility3 results as citable `source="memory"` rows.
+Runs **one** plugin (e.g. `windows.netscan.NetScan`, `windows.pslist`, `windows.cmdline`,
+`windows.malfind`) against the `MemDump` image; `contains` filters rows, `pid` restricts to a
+process. Reads `budgets["memory"]` (vol_cmd, cache_dir); disk-caches per (image, plugin, args) in
+`output/_memcache`. Volatility runs in its own venv (`.venv-vol`); the tool shells out to it.
+SLOW (tens of seconds–minutes). If memory is disabled/absent it says so → POINT at the image. No
+hashdump/lsadump plugin in this build.
+
+### Write / control (validated)
+
+**`list_findings()`** → `{count, findings:[{id, severity, technique, title}]}`. Read the ledger
+before recording, to add to an existing finding instead of duplicating.
+
+**`record_finding(title, severity, evidence[], confidence?, attack_technique?, description?)`** →
+`{recorded_finding: id}` or `{merged_into_finding: id}`. `evidence` is `[{locator, excerpt?}]`,
+**non-empty**, and **every locator must be in `emitted_locators`** or the call is rejected. If a
+finding with the **same `attack_technique` and a shared locator** exists, the new evidence is
+**merged** in (no duplicate).
+
+**`answer_question(question_id, status, …)`** resolves a question; `status` ∈:
+- `answered` → requires `answer` + non-empty validated `evidence` (same emitted-locator check).
+- `pointer` → requires `candidate_files:[{path, reason?}]`; **each path must exist in `files`**.
+- `unresolved` → requires `reasoning` (what was searched).
+Optional `confidence`. Duplicate answers (same value) are skipped; **distinct** candidate
+answers are kept side-by-side for the analyst.
+
+**`file_lead(title, reason?)`** → enqueues a new `source="agent"` lead for the orchestrator (don't
+chase it yourself). Honors `allow_expansion`, `max_total_leads`, `max_lead_depth`, and `dedup_key`
+(returns "duplicate" if already queued).
+
+**`mark_examined(artifact)`** → sets that bucket's `coverage.status="analyzed"`. The run finishes
+only when no present bucket is still `unexamined`.
 
 ### The citation-enforcement mechanism (the anti-hallucination core)
 
@@ -214,17 +407,14 @@ layer C verifier ──────────────────▶ re-re
 ```
 
 So a sub-agent cannot fabricate evidence: it can only cite something a tool literally returned
-to it this run, and the report independently re-checks it. `_resolve_locator()` tolerantly
-canonicalizes over-escaped registry backslashes (`\\` ↔ `\`) so a real citation isn't rejected
-on a formatting quirk.
+to it this run, and the report independently re-checks it.
 
-### On-demand vs bulk-parsed
+### Cross-cutting tool rules
 
-`mft_lookup` and `vol_run` materialize their results into the *same* `events` table
-(`source="mft"` / `source="memory"`) with citable locators, and cache to disk
-(`vol_run` → `output/_memcache`). So "the memory agent" is **not** a separate process — it's
-the generic sub-agent, pointed at `playbooks/memory.md`, calling the `vol_run` tool. Volatility
-runs in its own venv (`.venv-vol`); the tool just shells out to it.
+- **Truncation is explicit:** capped read tools return `truncated`/`total_matched` so a slice is
+  never mistaken for the whole set.
+- **Errors don't crash the run:** any handler exception becomes a tool-error string the model
+  sees and adapts to.
 
 ---
 
