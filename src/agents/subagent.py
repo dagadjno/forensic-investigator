@@ -45,8 +45,9 @@ _PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry
               "Sch": "scheduled_tasks", "Proc": "process_listings",
               "Ranprog": "prefetch", "Rcy": "recycle_bin", "WMI": "wmi",
               "Logs": "acquisition_log",
-              # stock-AChoirX dir-code aliases (same playbooks cover both layouts)
-              "Prf": "prefetch", "SYS": "srum"}
+              # stock-AChoirX dir-code aliases / new buckets (validated on AChoirX 2026)
+              "Prf": "prefetch", "SYS": "srum", "ASEP": "amcache",
+              "RanProg": "prefetch", "PCA": "pca"}
 
 # Tools that count as "searching" — summarized into an auto-unresolved note if a question
 # lead ends without recording any answer.

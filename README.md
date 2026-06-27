@@ -593,11 +593,14 @@ python main.py check      --artifact-map config/artifact_map.stock.yaml "PATH/TO
 python main.py investigate --artifact-map config/artifact_map.stock.yaml "PATH" --case-id x
 ```
 
-A ready-made **`config/artifact_map.stock.yaml`** is included for **stock AChoirX** output.
-Stock AChoirX is ~95% identical to the DC33 layout — the same bundled export tools (so the
-browser/USN CSV formats match) and standard binary formats — differing only in a few folder
-codes (`Ranprog`→`Prf`, `Sys`→`SYS`, a new `PCA` bucket). For any other collector, copy
-`artifact_map.yaml`, rename/add codes to match what `check` reports, and you're done.
+A ready-made **`config/artifact_map.stock.yaml`** is included for **stock AChoirX** output and
+has been **validated against a real stock collection (AChoirX 2026)** — all parsers run and
+`check` reports COMPATIBLE. Stock is ~95% the same as the DC33 layout (same bundled export tools,
+so the browser/USN CSV formats match; standard binary formats), differing only in a few folder
+codes: autoruns `Arn`→`ASEP` (CSV), sysinfo `Sys`→`SYS`, real prefetch in `Prf` (plus run-program
+copies still in `RanProg`), and a new `PCA` bucket (Program Compatibility Assistant — execution
+evidence). For any other collector, copy `artifact_map.yaml`, rename/add codes to match what
+`check` reports, and you're done.
 
 ---
 
@@ -656,11 +659,11 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] Memory-image analysis (Volatility3) — on-demand `vol_run` tool over an isolated venv
       (optional; see [section 10](#10-memory-image-analysis-optional))
 - [x] Collection-compatibility `check` command + `--artifact-map` layout adapter — incl. a
-      ready-made map for stock AChoirX output (verified ~95% compatible with the DC33 layout)
+      ready-made map **validated on a real stock AChoirX (2026) collection** (all parsers run;
+      new buckets `ASEP`/`PCA`/`Prf` cataloged + playbook-guided, read on demand)
 - [x] Parallel multi-host runs (`run_hosts.py`, live-streamed) + CTF helpers (deterministic
       planted-flag scan via `find_flags`, verbatim-token answers, inline `--question`)
 - [x] Cross-host combined **answer sheet** + interactive **HTML dashboard** (search / filter /
       sort across all hosts; per-host `report.html` too) — `aggregate.py` / `report_html.py`
 - [ ] Cross-host correlation — a single agent investigating the whole domain *jointly* (today
       each host is investigated separately and the results are combined after the fact)
-- [ ] Parser for the stock-AChoirX `PCA` bucket (Program Compatibility Assistant — execution evidence)
