@@ -64,7 +64,14 @@ class AnthropicBackend:
         stop = "tool_use" if msg.stop_reason == "tool_use" else "end_turn"
         # Pass raw content back as the assistant turn (preserves thinking blocks).
         assistant_turn = {"role": "assistant", "content": msg.content}
-        return LLMResponse("".join(text_parts), tool_calls, assistant_turn, stop)
+        u = getattr(msg, "usage", None)
+        usage = {
+            "input_tokens": getattr(u, "input_tokens", 0) or 0,
+            "output_tokens": getattr(u, "output_tokens", 0) or 0,
+            "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+            "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
+        } if u else {}
+        return LLMResponse("".join(text_parts), tool_calls, assistant_turn, stop, usage=usage)
 
     @staticmethod
     def _to_msg(turn):

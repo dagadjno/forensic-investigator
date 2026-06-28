@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..llm import pricing
 from ..llm.base import neutral_user
 from ..llm.client import LLMClient
 from ..store.case_db import CaseDB
@@ -122,8 +123,9 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         task += f"\nFocus on resolving question [{lead['question_id']}]."
 
     history = [neutral_user(task)]
-    max_steps = budgets.get("max_subagent_steps", 25)
+    max_steps = budgets.get("max_subagent_steps", 20)
     searches: list[str] = []   # what this lead actually looked at (for an honest unresolved)
+    usage = pricing.blank()    # token usage accumulated across this lead's LLM calls
     aborted = False
     steps_done = 0
 
@@ -137,6 +139,7 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
                   f"{type(e).__name__}: {e}", flush=True)
             aborted = True
             break
+        pricing.accumulate(usage, resp.usage)
         history.append(resp.assistant_turn)
         if resp.stop_reason != "tool_use":
             break
@@ -155,7 +158,9 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         history.append(neutral_user(results))
 
     _conclude_unresolved(case, lead, searches, steps_done, max_steps, aborted)
-    return {"lead_id": lead["id"]}
+    print(f"       {c('lead #' + str(lead['id']) + ' cost', 'gray')}: "
+          f"{pricing.summary(llm.model_for('subagent'), usage)}", flush=True)
+    return {"lead_id": lead["id"], "usage": usage}
 
 
 def _conclude_unresolved(case, lead, searches, steps_done, max_steps, aborted):

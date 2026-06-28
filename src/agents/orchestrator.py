@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from ..llm import pricing
 from ..llm.client import LLMClient
 from ..store.case_db import CaseDB
 from ..ui import EMOJI, c
@@ -80,6 +81,7 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
     ceiling_s = budgets.get("max_host_minutes", 0) * 60   # 0 = no wall-clock ceiling
     t0 = time.time()
     processed = 0
+    run_usage = pricing.blank()   # token usage summed across every lead this run
 
     while processed < safety_cap:
         if ceiling_s and (time.time() - t0) > ceiling_s:
@@ -95,7 +97,8 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
             lead["source"], "gray")
         print(f"  {EMOJI['lead']} {c('lead #' + str(lead['id']), 'cyan', 'bold')} "
               f"{c('[' + lead['source'] + ']', src_color)} {lead['title']}", flush=True)
-        subagent.run(llm, case, artifact_root, kb_dir, lead, host, budgets)
+        res = subagent.run(llm, case, artifact_root, kb_dir, lead, host, budgets)
+        pricing.accumulate(run_usage, res.get("usage"))
         case.set_lead_status(lead["id"], "closed")
         # Progress invariant: a coverage lead's bucket is examined once visited.
         if lead["source"] == "coverage" and lead["artifact"]:
@@ -105,3 +108,8 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
     if processed >= safety_cap:
         print(f"  {EMOJI['warn']} {c('safety cap reached', 'yellow', 'bold')}; stopping "
               f"(check for runaway lead generation)")
+
+    print(f"  {EMOJI['chart']} {c('run cost', 'cyan', 'bold')}: "
+          f"{pricing.summary(llm.model_for('subagent'), run_usage)}  "
+          f"{c('(' + str(processed) + ' lead(s), ' + f'{(time.time() - t0) / 60:.1f}min)', 'gray')}",
+          flush=True)

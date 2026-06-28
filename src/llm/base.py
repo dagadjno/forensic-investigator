@@ -30,6 +30,9 @@ class LLMResponse:
     tool_calls: list[ToolCall]
     assistant_turn: object          # native turn to append to history (opaque)
     stop_reason: str                # "tool_use" | "end_turn"
+    # Token usage for this one call (for per-lead / per-run cost printouts). Keys:
+    # input_tokens, output_tokens, cache_read, cache_write. Empty if the backend can't report.
+    usage: dict = field(default_factory=dict)
 
 
 def neutral_user(content) -> dict:
