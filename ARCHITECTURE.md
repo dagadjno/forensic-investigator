@@ -210,8 +210,87 @@ add) let an older `case.db` upgrade in place when reopened.
 Two artifacts are deliberately **not** bulk-parsed (too large): the full `$MFT` and the memory
 image. They're queried lazily during layer B (see §6, on-demand tools).
 
-Parsers read fields **by name** (DictReader / EVTX `EventData Name=` / ESE columns), so new
-columns or fields in a newer collector are ignored, not fatal.
+### The parser contract (shared by every parser)
+
+Each `src/extraction/<x>.py` exposes one `parse(case, root, dir_code)` and obeys the same
+five rules, so they're interchangeable and degrade predictably:
+
+1. **Curate, don't dump.** A triage collection is mostly noise (a DC's `Security.evtx` alone is
+   ~170k records; a `$MFT`/USN journal is hundreds of thousands of files). Parsers emit a *high-
+   value allowlist* — chosen channels/IDs/keys/event-types — so the timeline stays a signal, not
+   a haystack. Completeness is recovered on demand (`get_raw_event`, `mft_lookup`), not up front.
+2. **Read by name, never by position.** CSV via `DictReader`, EVTX via `EventData Name=`, ESE/
+   registry by column/value name. A newer collector that adds or reorders columns is *ignored,
+   not fatal*. CSV column lookups go through a tolerant `_get(row, *candidates)` (case-insensitive,
+   first non-empty) so vendor-tool header drift is absorbed.
+3. **Summary + full raw.** Every row gets a short, triage-readable `summary` AND the complete
+   underlying record as JSON in `events.raw`. When the summary omits fields it appends
+   `[+N more fields — get_raw_event]`, so nothing is silently lost — the agent can pull the full
+   object with `get_raw_event`.
+4. **Stable locator per row** (the citation handle — §3): `<source>:<relpath>:<record-key>`.
+5. **Degrade gracefully.** A missing backend library (registry/lnk/srum/evtx) or absent input
+   *skips that bucket* with a one-line note; the file catalog still lets the agent POINT at it.
+
+The owning user is recovered the same way everywhere — the `…/Users/<user>/…` path segment.
+
+### How each parser reads its source
+
+**`psh` — PowerShell console history** (`ConsoleHost_history.txt`, plain text). Walks the bucket
+for `*history*` / `*.txt`, emits **one event per non-empty line** (a typed command). These files
+carry no timestamps, so events are ordered but un-timed; `raw` is the verbatim line.
+Locator `powershell_history:<rel>:<lineno>`.
+
+**`browser` — history & downloads** (NirSoft *BrowsingHistoryView* / *BrowserDownloadsView* CSV).
+`csv.DictReader` with `utf-8-sig` (strips the BOM). `_classify()` decides *history* vs *download*
+from the header set, then pulls URL / title / visit-time / filename / saved-path / start-time via
+the tolerant `_get`. Capped at 5000 rows/file. Locator `browser:<rel>:<rownum>`.
+
+**`usn` — USN change journal** (`USNJrnl.csv`, an ExtractUSNJrnl export). The journal is huge and
+mostly data-write churn, so this is a **curated lifecycle parse**: only CREATE / DELETE / RENAME
+records for *interesting extensions* (executables, scripts, archives, docs, creds/dumps), deduped
+per file, noise-filtered (`__PSScriptPolicyTest`, `mpcache-`, Office `~$` locks, Search-indexer
+churn), capped at 6000. USN stores the file *name* but not its directory (resolving a full path
+needs the `$MFT` → `mft_lookup`). Locator `usn:<rel>:<usn-number>`.
+
+**`evtx` — Windows event logs** (`*.evtx`, binary). Backend: Rust-backed `evtx` (falls back to
+pure-Python `python-evtx`, which is far slower and can silently truncate — a startup guard warns).
+Two-stage curation: (a) a **channel allowlist** — `_CHANNELS` matches a filename substring to a
+family + an interesting-ID set, first-match-wins (so `…%4Security.evtx` resolves as SMB before the
+generic `security.evtx`); `ids=None` keeps every ID for low-volume channels. (b) within a kept
+channel, only **whitelisted EventIDs** (`_SEC`/`_SYS`/`_PS`/…) survive. Per record: iterate
+`(record_id, timestamp, xml)` → parse XML with ElementTree → lift `System` fields (EventID,
+Computer, TimeCreated, the SID) and `EventData`/`UserData` fields. Named `<Data Name=…>` keep their
+names; **unnamed** `<Data>` (classic providers like Application Error, MsiInstaller, SCM) are
+captured positionally as `Data1`, `Data2`, …. The summary leads with `_KEY_FIELDS` (the most
+triage-useful fields) then the rest. A per-channel heartbeat updates in place during long scans.
+Locator `event_logs:<rel>:<record_id>`.
+
+**`registry` — hives** (`SOFTWARE`/`SYSTEM`/`SAM`/`NTUSER.DAT`/`Amcache.hve`, binary; backend
+python-registry). `_hive_type()` routes each hive by filename (SECURITY/UsrClass are skipped). Like
+EVTX, it's an **allowlist of high-value keys**, not a full dump: Run/RunOnce persistence, Uninstall
+→ installed software, `CurrentVersion` → OS build/owner/install-date, `NetworkList` → network
+profiles, services (surfaced only when the `ImagePath` trips a suspicious-location heuristic and
+isn't under a standard system prefix), plus account/device/user-activity keys. `raw` holds *every*
+value under the emitted subkey. **`Amcache.hve`** is parsed in the same module but emitted under a
+distinct `source="amcache"` (program-execution evidence with SHA-1 hashes). Locator
+`registry:<rel>:<keypath>\<value-or-subkey>` (amcache rows use an `amcache:` prefix).
+
+**`lnk` — shortcuts** (`*.lnk`, especially under `Recent/`; backend LnkParse3). One event per
+shortcut, lifting the target's **full path, MAC timestamps, size, and volume type** (local /
+network / removable) — i.e. evidence that a user opened a specific file/share. `raw` is the full
+parsed record. Locator `lnk:<rel>`.
+
+**`srum` — System Resource Usage Monitor** (`SRUDB.dat`, an ESE database; backend dissect.esedb).
+Parses two high-value tables by GUID: *Application Resource Usage* — **aggregated per app** (the raw
+table is thousands of ~hourly rows, so a per-app rollup of active-window time + disk I/O is the
+triage signal) — and *Network Connectivity* (one event per record). App/user IDs are resolved
+through `SruDbIdMapTable`; the OLE-automation `TimeStamp` is decoded to ISO. Locator
+`srum:<rel>:app:<i>` / `srum:<rel>:net:<id>`.
+
+**On-demand (not bulk-parsed): `$MFT` and the memory image.** Both are too large to materialize up
+front. `mft_lookup` resolves a filename/USN reference to its full path/MAC times against `$MFT`, and
+`vol_run` runs a Volatility3 plugin against the memory image — each materializing only the rows it
+returns into `events`. See §6, on-demand tools.
 
 ---
 
