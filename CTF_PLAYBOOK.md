@@ -237,8 +237,12 @@ most questions. Other levers:
 - **Parse once, reuse** the `case.db` (§3). Never re-parse to ask a follow-up.
 - **Batch** questions per host; don't run one-per-host-per-question (coverage work is shared).
 - **Scope** with `--relevant-only` / `--only`; **Sonnet** for sweeps, Opus only for hard ones.
-- **Trim budgets** in `config/config.yaml` for a cheaper sweep: `max_subagent_steps` 25→12–15,
-  `max_total_leads` 200→60 (later steps have diminishing returns).
+- **Budgets bound cost/time per host** (`config/config.yaml`): defaults are already tuned for a
+  CTF — `max_subagent_steps 20`, `max_total_leads 60`, plus two runaway guards: a **per-question
+  lead cap** (`max_leads_per_question 8`, so one unanswerable question can't fan out across every
+  bucket) and a **wall-clock ceiling** (`max_host_minutes 25`, after which the host stops and
+  writes its report — answers commit live, so nothing is lost). Lower these further for a cheaper
+  sweep, but don't cut `max_subagent_steps` below ~18 (it starves the "rank all candidates" logic).
 - **Parallelize** with `run_hosts.py --jobs N` (more jobs = faster but more API/min + CPU).
 - Idle-sleep is auto-prevented; keep the **lid open**. `NO_COLOR=1` / `NO_EMOJI=1` for plain logs.
 

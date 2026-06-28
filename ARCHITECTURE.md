@@ -242,8 +242,10 @@ Locator `powershell_history:<rel>:<lineno>`.
 
 **`browser` — history & downloads** (NirSoft *BrowsingHistoryView* / *BrowserDownloadsView* CSV).
 `csv.DictReader` with `utf-8-sig` (strips the BOM). `_classify()` decides *history* vs *download*
-from the header set, then pulls URL / title / visit-time / filename / saved-path / start-time via
-the tolerant `_get`. Capped at 5000 rows/file. Locator `browser:<rel>:<rownum>`.
+from the header set, then pulls URL / title / visit-time / filename / saved-path / start+end-time
+via the tolerant `_get`. A download's event timestamp is its **End Time** (completion), falling
+back to Start Time — "when was X downloaded" means *finished*, not the create-at-start. Capped at
+5000 rows/file. Locator `browser:<rel>:<rownum>`.
 
 **`usn` — USN change journal** (`USNJrnl.csv`, an ExtractUSNJrnl export). The journal is huge and
 mostly data-write churn, so this is a **curated lifecycle parse**: only CREATE / DELETE / RENAME
@@ -270,8 +272,9 @@ python-registry). `_hive_type()` routes each hive by filename (SECURITY/UsrClass
 EVTX, it's an **allowlist of high-value keys**, not a full dump: Run/RunOnce persistence, Uninstall
 → installed software, `CurrentVersion` → OS build/owner/install-date, `NetworkList` → network
 profiles, services (surfaced only when the `ImagePath` trips a suspicious-location heuristic and
-isn't under a standard system prefix), plus account/device/user-activity keys. `raw` holds *every*
-value under the emitted subkey. **`Amcache.hve`** is parsed in the same module but emitted under a
+isn't under a standard system prefix), device enumeration (`Enum\USBSTOR` + `Enum\SCSI` disk/
+virtual-disk models — the EBS-style `Prod_` model lives in the class-key name), plus account/
+user-activity keys. `raw` holds *every* value under the emitted subkey. **`Amcache.hve`** is parsed in the same module but emitted under a
 distinct `source="amcache"` (program-execution evidence with SHA-1 hashes). Locator
 `registry:<rel>:<keypath>\<value-or-subkey>` (amcache rows use an `amcache:` prefix).
 
@@ -344,7 +347,7 @@ tool output locally so the orchestrator never has to hold it — this keeps each
 - **Specialization is by playbook, not code.** For a coverage lead the sub-agent is told to
   `kb_read('playbooks/<bucket>.md')` first (the `_PLAYBOOKS` dir-code→doc map). The same code
   investigates PowerShell, registry, or memory — the playbook supplies the domain knowledge.
-- **The loop** (up to `budgets.max_subagent_steps`, default 25):
+- **The loop** (up to `budgets.max_subagent_steps`, default 20):
   ```
   history = [task]
   for step in 1..max:
@@ -465,8 +468,10 @@ Optional `confidence`. Duplicate answers (same value) are skipped; **distinct** 
 answers are kept side-by-side for the analyst.
 
 **`file_lead(title, reason?)`** → enqueues a new `source="agent"` lead for the orchestrator (don't
-chase it yourself). Honors `allow_expansion`, `max_total_leads`, `max_lead_depth`, and `dedup_key`
-(returns "duplicate" if already queued).
+chase it yourself). Honors `allow_expansion`, `max_total_leads`, `max_lead_depth`, `dedup_key`
+(returns "duplicate" if already queued), and a **per-question cap** (`max_leads_per_question`): the
+originating question id rides along on every follow-up lead, so a single unanswerable question
+can't fan out unbounded — once it hits the cap, `file_lead` is refused and the agent must conclude.
 
 **`mark_examined(artifact)`** → sets that bucket's `coverage.status="analyzed"`. The run finishes
 only when no present bucket is still `unexamined`.
@@ -547,9 +552,11 @@ agent reasoning across hosts jointly is the open roadmap item.
 ## 10. Invariants & guarantees (what keeps it honest and terminating)
 
 - **No uncited assertion** — structural (emit→check→verify), §6.
-- **Termination** — coverage leads force every bucket to `analyzed`; `dedup_key` blocks
-  re-filing identical leads; `depth`/`max_lead_depth` caps agent-filed lead chains;
-  `max_subagent_steps` caps each lead; a global safety cap bounds total leads.
+- **Termination & bounded cost** — coverage leads force every bucket to `analyzed`; `dedup_key`
+  blocks re-filing identical leads; `depth`/`max_lead_depth` caps agent-filed lead chains;
+  `max_leads_per_question` caps how far one (possibly unanswerable) question can fan out;
+  `max_subagent_steps` caps each lead; a global safety cap bounds total leads; and
+  `max_host_minutes` is a wall-clock ceiling that stops the host and writes the partial report.
 - **Never-blank** — a question lead always ends with answered/pointer/unresolved.
 - **Resumable & idempotent** — durable SQLite state; `meta.ingested` skips re-parse;
   `reset_in_progress_leads` retries interrupted work; questions are content-hashed (`_qid`) so

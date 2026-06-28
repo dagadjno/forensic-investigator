@@ -569,7 +569,7 @@ artifacts can't answer — and results are cached per plugin.
 
 | File | Purpose |
 |------|---------|
-| `config/config.yaml` | Which AI model each role uses, effort level, safety budgets (max steps/leads), and the `memory:` block (Volatility settings — see [section 10](#10-memory-image-analysis-optional)). |
+| `config/config.yaml` | Which AI model each role uses, effort level, safety budgets (max steps/leads, plus a per-question lead cap and a per-host wall-clock ceiling), and the `memory:` block (Volatility settings — see [section 10](#10-memory-image-analysis-optional)). |
 | `config/artifact_map.yaml` | Maps evidence folder codes (`Evt`, `Reg`, …) to a type and a parser — **the adapter for a collection's layout**. Edit it (or pass `--artifact-map`) to support a differently-organized collection. |
 | `config/artifact_map.stock.yaml` | Ready-made layout map for **stock AChoirX** output (vs. the DC33 custom layout). Use via `--artifact-map`. |
 | `knowledge_base/` | Plain-Markdown "playbooks" and references the AI reads while investigating. **You can improve the tool's behavior by editing these — no coding required.** |
