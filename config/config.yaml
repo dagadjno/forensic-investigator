@@ -23,9 +23,17 @@ llm:
 
 budgets:
   # Run-to-completion, but with progress invariants so it terminates.
-  max_subagent_steps: 25     # tool-call rounds per sub-agent before it must conclude
+  max_subagent_steps: 20     # tool-call rounds per sub-agent before it must conclude
   max_lead_depth: 4          # how deep a filed-lead chain may go
-  max_total_leads: 200       # hard stop against runaway lead generation
+  max_total_leads: 60        # hard stop against runaway lead generation (per host)
+  # Bound the cost of an UNANSWERABLE question: an agent can chase a single question through
+  # only so many follow-up leads before further file_lead calls are refused (it must conclude
+  # with what it has). The question still gets every bucket via the coverage sweep.
+  max_leads_per_question: 8
+  # Wall-clock ceiling per host: after this many minutes the orchestrator stops popping new
+  # leads and writes the report with whatever's answered so far (answers commit live, so
+  # nothing is lost). Guards against a runaway burning an hour on one host. 0 = no ceiling.
+  max_host_minutes: 25
 
 memory:
   # On-demand Volatility3 analysis of the MemDump image, exposed as the `vol_run` tool.

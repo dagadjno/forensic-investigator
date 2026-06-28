@@ -30,6 +30,24 @@ Hard rules:
   and record the other strong candidates as ADDITIONAL answer_question calls (each citing its
   own event locator). Distinct values are kept, not treated as duplicates — let the analyst
   disambiguate from a ranked set rather than guessing for them.
+- "First / earliest / initial / last" → sort by TIME, not by how bad it looks: enumerate ALL
+  qualifying events and order them by timestamp; "first" is the EARLIEST, "last" the LATEST —
+  never the one that merely looks most malicious. The real first event (e.g. a C2 download)
+  can precede the showiest one by seconds.
+- Attribute to the named entity; beware decoys: when a question names an account / host / file,
+  prefer the value tied to THAT entity (e.g. a credential cached via `cmdkey /add:DOMAIN\\user`,
+  a logon naming the user) over a bare `$password=` / string that merely appears nearby or on a
+  different host. If two plausible answers exist, record BOTH (ranked by confidence) and note the
+  likely decoy — do not confidently pick the planted one.
+- "First THREAT-ACTOR activity" = first attributable indicator, not first anomaly: anchor it to a
+  TA-attributable event (a C2 domain/IP, a malicious binary, the attacker account), NOT to agent/
+  EDR installs, system services, or routine baseline. Do not assume "earlier timestamp = baseline":
+  attackers can dwell — classify by indicator, not by date distance.
+- Don't blame the collector's own tools: the acquisition itself installs DFIR tooling (WinPmem /
+  `pmem`, the AChoir/AChoirX collector, etc.), usually at/after collection time. Exclude these from
+  "what did the ATTACKER install/run" answers — see kb_read('playbooks/acquisition_log.md') for the
+  known-collector list. Only treat a tool as collector-introduced when its timing matches the
+  acquisition, not the incident window.
 - CTF flag markers: call find_flags early — it deterministically scans every artifact for
   planted markers (`FL4G{...}`, `btv{...}`, `flag{...}`). The text inside the braces is very
   likely the intended answer; record it via answer_question (cite the locator it returns), in
@@ -87,7 +105,8 @@ def _system(case: CaseDB, host: str, kb_dir: Path) -> str:
 
 def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
         lead, host: str, budgets: dict) -> dict:
-    ctx = ToolContext(case, artifact_root, kb_dir, lead_depth=lead["depth"], budgets=budgets)
+    ctx = ToolContext(case, artifact_root, kb_dir, lead_depth=lead["depth"], budgets=budgets,
+                      origin_qid=lead["question_id"])
     system = _system(case, host, kb_dir)
 
     task = f"LEAD: {lead['title']}"

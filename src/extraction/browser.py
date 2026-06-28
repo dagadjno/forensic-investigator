@@ -92,11 +92,14 @@ def parse(case: CaseDB, root: Path, dir_code: str) -> None:
                         du = _get(row, "Download URL 1", "Download URL", "URL")
                         saved = _get(row, "Full Path Filename")
                         st = _get(row, "Start Time")
+                        et = _get(row, "End Time")   # download COMPLETION (later than start for big files)
                         summary = (f"[Download] {fn} <- {du} | saved={saved} "
-                                   f"size={_get(row, 'Download Size', 'File Size')} {st} "
-                                   f"[{_get(row, 'Web Browser')}]")
+                                   f"size={_get(row, 'Download Size', 'File Size')} "
+                                   f"start={st} end={et} [{_get(row, 'Web Browser')}]")
                         user = _user_from_paths(saved, _get(row, "Browser Profile Path"))
-                        _emit(case, rel, i, "download", summary, st, user, row)
+                        # Use completion time as the event timestamp ("when was it downloaded"
+                        # usually means finished); fall back to start if End Time is absent.
+                        _emit(case, rel, i, "download", summary, et or st, user, row)
                     else:
                         vals = "; ".join(f"{k}={v}" for k, v in row.items() if v)[:300]
                         _emit(case, rel, i, "row", f"[Browser] {vals}", "", "", row)

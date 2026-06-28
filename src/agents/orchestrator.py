@@ -9,6 +9,7 @@ The pick order here is a simple priority sort; an LLM override hook can slot in 
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from ..llm.client import LLMClient
@@ -75,10 +76,17 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
     if reopened:
         print(f"    resumed: re-opened {reopened} in-progress lead(s)", flush=True)
     seed(case, only, priority_overrides)
-    safety_cap = budgets.get("max_total_leads", 200) + 50
+    safety_cap = budgets.get("max_total_leads", 60) + 50
+    ceiling_s = budgets.get("max_host_minutes", 0) * 60   # 0 = no wall-clock ceiling
+    t0 = time.time()
     processed = 0
 
     while processed < safety_cap:
+        if ceiling_s and (time.time() - t0) > ceiling_s:
+            print(f"  {EMOJI['clock']} {c('time ceiling reached', 'yellow', 'bold')} "
+                  f"({budgets['max_host_minutes']} min); stopping with results so far "
+                  f"(answers are already saved)", flush=True)
+            break
         lead = case.next_lead()
         if lead is None:
             break

@@ -67,6 +67,19 @@ chatter), not a person. Use:
 The answer is the IP on the event that *names the account and an interactive/RDP logon* —
 even if it appears only a few times — not the noisiest IP in the timeline.
 
+## Answer selection (first / baseline / collector noise)
+- **"First / earliest"** → enumerate every qualifying event and pick the one with the
+  **earliest timestamp**, not the most malicious-looking. The initial C2 download can precede
+  the showiest script-block by seconds.
+- **"First THREAT-ACTOR activity"** → anchor to a **TA-attributable** indicator (a C2 IP/domain
+  in Sysmon 3, a malicious binary in Sysmon 1/4688, the attacker account) — NOT to agent/EDR
+  installs, system services, or routine boot/baseline events. A far-earlier timestamp is not
+  automatically "baseline"; classify by indicator (attackers dwell).
+- **Collector noise:** a 7045 service install (or Sysmon 1 / amcache hit) for `pmem`/**WinPmem**
+  or the **AChoir/AChoirX** collector, timestamped in the acquisition window, is the *collector's*
+  tooling — exclude it from "what did the attacker install" answers (see
+  kb_read('playbooks/acquisition_log.md')).
+
 ## Correlate
 Event logs are where you confirm/expand leads from other artifacts: a C2 IP from
 PowerShell history should show in Sysmon 3; a downloaded payload in Sysmon 1/4688;

@@ -14,6 +14,11 @@ Browser data is parsed from the collection's CSV exports into the timeline as
 - **Downloads** — attacker tools pulled via the browser (RMM installers, PuTTY, Chrome,
   archive tools, payloads). Each row has the source URL, the saved path, size, and
   timing. This is prime evidence of how tooling arrived on the host.
+  - **Download time = `end=` (completion), not `start=`.** A download row shows both
+    `start=` and `end=`; for a large file these differ by minutes. When a question asks
+    "when was X downloaded", the intended answer is usually the **completion** (`end=`) —
+    the same value as the file's finalize/close, NOT the Sysmon-11 *create* event (which
+    fires at download *start*). Use `start=` only if `end=` is blank.
 - **History** — visited sites: paste/transfer services, VirusTotal (checking payloads),
   webmail, cloud storage (exfil), attacker infrastructure, and `file://` URLs that reveal
   locally-opened files (often easter-egg trivia — a document, an image, a note).

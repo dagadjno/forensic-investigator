@@ -18,12 +18,15 @@ from ..textutil import read_text_auto
 
 class ToolContext:
     def __init__(self, case: CaseDB, artifact_root: Path, kb_dir: Path,
-                 lead_depth: int, budgets: dict):
+                 lead_depth: int, budgets: dict, origin_qid: str | None = None):
         self.case = case
         self.root = artifact_root
         self.kb_dir = kb_dir
         self.lead_depth = lead_depth
         self.budgets = budgets
+        # The question this lead chain serves (propagated to any follow-up leads), so a single
+        # unanswerable question can't spawn unbounded sub-leads. None for coverage leads.
+        self.origin_qid = origin_qid
 
 
 def _ok(payload) -> str:
@@ -649,12 +652,20 @@ def _answer_question(ctx, args):
 def _file_lead(ctx, args):
     if not ctx.budgets.get("allow_expansion", True):
         return "expansion disabled for this run; investigate within this lead or record a finding instead", False
-    if ctx.case.total_leads() >= ctx.budgets.get("max_total_leads", 200):
+    if ctx.case.total_leads() >= ctx.budgets.get("max_total_leads", 60):
         return "lead budget reached; not filing", False
     if ctx.lead_depth + 1 > ctx.budgets.get("max_lead_depth", 4):
         return "max lead depth reached; investigate within this lead or record a finding instead", False
+    # Per-question cap: bound how many follow-up leads one question can spawn, so an
+    # unanswerable question can't fan out across every bucket. The coverage sweep still
+    # examines every bucket independently, so this caps chasing, not coverage.
+    cap = ctx.budgets.get("max_leads_per_question", 8)
+    if ctx.origin_qid and ctx.case.leads_for_question(ctx.origin_qid) >= cap:
+        return (f"per-question lead cap reached ({cap}) for this question; conclude with what "
+                f"you have (answer / pointer / unresolved) instead of filing more leads"), False
     lid = ctx.case.add_lead(title=args["title"], reason=args.get("reason", ""),
-                            source="agent", depth=ctx.lead_depth + 1, priority=60)
+                            source="agent", question_id=ctx.origin_qid,
+                            depth=ctx.lead_depth + 1, priority=60)
     return _ok({"filed_lead": lid if lid else "duplicate (already queued)"}), False
 
 

@@ -120,6 +120,13 @@ class CaseDB:
     def total_leads(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
 
+    def leads_for_question(self, question_id: str) -> int:
+        """How many agent follow-up leads this question has spawned (for the per-question cap).
+        Counts only agent-filed leads tied to the question, not the original question lead."""
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM leads WHERE question_id=? AND source='agent'", (question_id,)
+        ).fetchone()[0]
+
     # ---- emitted locators (citation backbone) ---------------------------
     def emit_locator(self, locator: str, kind: str, detail: str = "") -> None:
         self.conn.execute(

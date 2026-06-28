@@ -28,6 +28,10 @@ system). Cite the row `locator`.
 - **activity** — RunMRU (Run-dialog commands typed) and TypedPaths (Explorer). High
   signal for both attacker actions and benign user trivia (easter eggs).
 - **usb** — USBSTOR device history. Data exfil / device use.
+- **device** — SCSI-bus disk/virtual-disk enumeration (`Enum\SCSI`). For "which device
+  model connected", the model is in the class-key name's `Prod_` field (e.g.
+  `Disk&Ven_NVMe&Prod_Amazon_Elastic_B` → an "Amazon Elastic Block Store" volume) plus the
+  `FriendlyName`/`DeviceDesc`. Query `contains="[Device]"` or the vendor/product string.
 - **network** — saved network profiles (SSIDs / network names).
 - **osinfo / system** — OS build, registered owner, computer name, timezone (host facts;
   registered owner/org sometimes answers "who/what department" style questions).

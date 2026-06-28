@@ -216,6 +216,18 @@ def _system(reg, emit):
                 emit("usb", f"[USB] {cls.name()} {fn}".strip(),
                      f"{ccs}\\Enum\\USBSTOR\\{cls.name()}", inst.name(), str(inst.timestamp()),
                      fields=vals)
+    # SCSI bus — where disk / virtual-disk devices enumerate (e.g. an EBS volume appears as
+    # `Disk&Ven_NVMe&Prod_Amazon_Elastic_B`; the device *model* is the truncated Prod_ in the
+    # class-key name). Low-volume (a handful of disks), unlike PCI which we skip as noise.
+    scsi = _open(reg, f"{ccs}\\Enum\\SCSI")
+    if scsi:
+        for cls in scsi.subkeys():
+            for inst in cls.subkeys():
+                vals = _all_values(inst)
+                desc = vals.get("FriendlyName", "") or vals.get("DeviceDesc", "")
+                emit("device", f"[Device] {cls.name()} {desc}".strip(),
+                     f"{ccs}\\Enum\\SCSI\\{cls.name()}", inst.name(), str(inst.timestamp()),
+                     fields=vals)
     svc = _open(reg, f"{ccs}\\Services")
     if svc:
         for sk in svc.subkeys():
