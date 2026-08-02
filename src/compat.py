@@ -28,9 +28,29 @@ def _lnk(base):     return list(base.rglob("*.lnk"))
 def _psh(base):     return [p for p in base.rglob("*") if p.is_file()
                             and ("history" in p.name.lower() or p.suffix.lower() == ".txt")]
 def _registry(base): return [p for p in base.rglob("*") if p.is_file() and registry._hive_type(p.name)]
+# Linux parsers
+def _syslog(base):   return [p for p in base.rglob("*") if p.is_file() and
+                             (p.name.lower().startswith(("auth.log", "syslog"))
+                              or p.name.lower() in ("secure", "kern.log", "messages", "daemon.log", "user.log"))]
+def _packages(base): return [p for p in base.rglob("*") if p.is_file() and
+                             (p.name.lower().startswith("dpkg.log")
+                              or (p.name.lower() == "history.log" and "apt" in p.as_posix().lower()))]
+def _bodyfile(base): return [p for p in base.rglob("*") if p.is_file() and "bodyfile" in p.name.lower()]
+def _shell(base):    return [p for p in base.rglob("*") if p.is_file() and p.name in
+                             {".bash_history", ".zsh_history", ".sh_history", ".history", ".python_history"}]
+def _proc(base):     return [p for p in base.rglob("*") if p.is_file()
+                             and p.name in ("proc-CommandLines.dat", "PSList.dat")]
 
 _DETECT = {"evtx": _evtx, "registry": _registry, "psh": _psh, "browser": _browser,
-           "usn": _usn, "srum": _srum, "lnk": _lnk}
+           "usn": _usn, "srum": _srum, "lnk": _lnk,
+           "syslog": _syslog, "packages": _packages, "bodyfile": _bodyfile,
+           "shell_history": _shell, "proc": _proc}
+
+
+def _parser_names(spec: dict) -> list[str]:
+    """A bucket may declare one parser or a list (e.g. Linux VarLog: [syslog, packages])."""
+    p = spec.get("parser")
+    return [] if not p else (list(p) if isinstance(p, (list, tuple)) else [p])
 
 
 def _browser_cols_ok(files) -> bool:
@@ -70,39 +90,43 @@ def check(collection: Path, artifact_map: dict) -> int:
     present = sorted(p.name for p in collection.iterdir() if p.is_dir())
     known = [d for d in present if d in arts]
     unknown = [d for d in present if d not in arts]
-    parseable_codes = [d for d, s in arts.items() if s.get("parser")]
+    parseable_codes = [d for d, s in arts.items() if _parser_names(s)]
     missing_parseable = [d for d in parseable_codes if d not in present]
 
     print(f"\n{EMOJI['search']} Compatibility check: {collection}")
     print(f"   artifact map: {len(arts)} known dir-codes | top-level folders found: {len(present)}\n")
 
-    ok, empty = 0, []        # ok = buckets with readable input; empty = present-but-no-files
-    issues: list[str] = []   # real problems: parser present but format unreadable
+    ok, empty, catalog_only = 0, [], 0   # ok = buckets with readable parser input
+    issues: list[str] = []               # real problems: parser present but format unreadable
 
     print("  KNOWN dir-codes:")
     for d in known:
         spec = arts[d]
-        parser = spec.get("parser")
-        if not parser:
+        plist = _parser_names(spec)
+        if not plist:
+            catalog_only += 1
             print(f"    {d:10} -> {spec['type']:20} {c('(no parser; file-catalog / on-demand)', 'gray')}")
             continue
-        files = _DETECT.get(parser, lambda b: [])(collection / d)
+        # A bucket may have several parsers; gather inputs across all of them.
+        files = [f for pn in plist for f in _DETECT.get(pn, lambda b: [])(collection / d)]
         if not files:
             empty.append(d)
-            print(f"    {d:10} -> {spec['type']:20} {c('(empty — no ' + parser + ' inputs here; ok if this host lacks it)', 'gray')}")
+            print(f"    {d:10} -> {spec['type']:20} "
+                  f"{c('(empty — no ' + '/'.join(plist) + ' inputs here; ok if this host lacks it)', 'gray')}")
             continue
         cols_ok, note = True, f"{len(files)} file(s)"
-        if parser == "browser":
+        if "browser" in plist:
             cols_ok = _browser_cols_ok(files)
             note += " | columns " + ("OK" if cols_ok else c("UNRECOGNIZED", "yellow"))
-        elif parser == "usn":
-            cols_ok = _usn_cols_ok(files)
+        elif "usn" in plist:
+            cols_ok = _usn_cols_ok([f for f in files if "usn" in f.name.lower()])
             note += " | header " + ("OK" if cols_ok else c("UNRECOGNIZED", "yellow"))
-        print(f"    {d:10} -> {spec['type']:20} {EMOJI['ok'] if cols_ok else EMOJI['warn']} {note}")
+        print(f"    {d:10} -> {spec['type']:20} {EMOJI['ok'] if cols_ok else EMOJI['warn']} "
+              f"{'/'.join(plist)}: {note}")
         if cols_ok:
             ok += 1
         else:
-            issues.append(f"{d}: '{parser}' files present but column/format unrecognized — "
+            issues.append(f"{d}: '{'/'.join(plist)}' files present but column/format unrecognized — "
                           f"the parser would misread them (adapt the parser's column candidates)")
 
     if unknown:
@@ -112,20 +136,28 @@ def check(collection: Path, artifact_map: dict) -> int:
         print(f"  {c('parseable dir-codes not present in this collection:', 'gray')} "
               f"{', '.join(missing_parseable)}")
 
-    # Verdict: real incompatibility is unreadable formats, or "nothing parseable matched at all".
+    # Verdict. Truly incompatible = NO recognized dir-codes at all (a foreign layout). A
+    # recognized layout is always at least catalog-usable (the agent reads text files + POINTs),
+    # so it's COMPATIBLE even with zero timeline parsers — flagged "catalog-only" so you know
+    # there's no parsed timeline. Unreadable parser formats are the PARTIAL case.
     print()
-    if not known or ok == 0:
-        verdict = c("UNRECOGNIZED LAYOUT — no parseable artifacts matched the map", "red", "bold")
+    if not known:
+        verdict = c("UNRECOGNIZED LAYOUT — no dir-codes in this collection matched the map", "red", "bold")
         rc = 1
     elif issues:
         verdict = c(f"PARTIAL — {len(issues)} bucket(s) the parser can't read", "yellow", "bold")
         rc = 1
+    elif ok == 0:
+        verdict = c("COMPATIBLE (catalog-only)", "green", "bold") + \
+            c(" — recognized layout, but no timeline parser matched; the agent reads/POINTs at "
+              "files directly (add parsers to build a timeline)", "gray")
+        rc = 0
     else:
         verdict = c("COMPATIBLE", "green", "bold")
         rc = 0
     print(f"  Verdict: {verdict}")
-    print(f"  parseable buckets with readable input: {ok} | empty: {len(empty)} | "
-          f"unknown folders: {len(unknown)}")
+    print(f"  parseable buckets with readable input: {ok} | catalog-only: {catalog_only} | "
+          f"empty: {len(empty)} | unknown folders: {len(unknown)}")
     for i in issues:
         print(f"    - {EMOJI['warn']} {i}")
     if unknown:

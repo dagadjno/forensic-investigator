@@ -572,6 +572,7 @@ artifacts can't answer — and results are cached per plugin.
 | `config/config.yaml` | Which AI model each role uses, effort level, safety budgets (max steps/leads, plus a per-question lead cap and a per-host wall-clock ceiling), and the `memory:` block (Volatility settings — see [section 10](#10-memory-image-analysis-optional)). |
 | `config/artifact_map.yaml` | Maps evidence folder codes (`Evt`, `Reg`, …) to a type and a parser — **the adapter for a collection's layout**. Edit it (or pass `--artifact-map`) to support a differently-organized collection. |
 | `config/artifact_map.stock.yaml` | Ready-made layout map for **stock AChoirX** output (vs. the DC33 custom layout). Use via `--artifact-map`. |
+| `config/artifact_map.linux.yaml` | Ready-made layout map for a **Linux / Ubuntu AChoirX** collection. Use via `--artifact-map`. See [Linux collections](#linux--ubuntu-collections). |
 | `knowledge_base/` | Plain-Markdown "playbooks" and references the AI reads while investigating. **You can improve the tool's behavior by editing these — no coding required.** |
 | `.env` (from `.env.example`) | Your API key(s). Loaded automatically; git-ignored. |
 | `requirements.txt` / `requirements-memory.txt` | Core dependencies / the optional Volatility dependency for memory analysis. |
@@ -610,6 +611,34 @@ codes: autoruns `Arn`→`ASEP` (CSV), sysinfo `Sys`→`SYS`, real prefetch in `P
 copies still in `RanProg`), and a new `PCA` bucket (Program Compatibility Assistant — execution
 evidence). For any other collector, copy `artifact_map.yaml`, rename/add codes to match what
 `check` reports, and you're done.
+
+### Linux / Ubuntu collections
+
+The tool also handles **Linux (Ubuntu) AChoirX** collections — the same engine, with Linux
+parsers and Linux domain knowledge. Just add `--artifact-map config/artifact_map.linux.yaml`:
+
+```bash
+python main.py check      "PATH/TO/ACQ-IR-<linux-host>" --artifact-map config/artifact_map.linux.yaml
+python main.py investigate "PATH/TO/ACQ-IR-<linux-host>" --case-id lx --artifact-map config/artifact_map.linux.yaml
+# multi-host works the same:  run_hosts.py "…/ACQ-IR-*" --artifact-map config/artifact_map.linux.yaml …
+```
+
+The Linux dir-codes (`VarLog`, `Proc`, `Disk`, `Home`, `Cron`, `Svc`, `Etc`, `Conn`, `Fwl`,
+`Sys`, `RanProg`, `MemDump`, `Cache`) map to Linux parsers that build a cited timeline from:
+
+- **`VarLog`** — `auth.log`/syslog (SSH logons, sudo, su, account changes) and `dpkg`/`apt` package
+  installs (source `syslog` / `package`),
+- **`Disk`** — the mactime **bodyfile** → a curated filesystem MAC timeline (source `filesystem`),
+- **`Proc`** — a running-process snapshot (command line + SHA-1 + **deleted-executable** malware tell; source `process`),
+- **`Home`** — `.bash_history`/`.zsh_history` shell commands (source `shell_history`).
+
+The other buckets (`Cron`, `Svc`, `Etc`, `Conn`, `Fwl`, `Sys`, `RanProg`) are cataloged and read
+directly by the agent, guided by Linux playbooks (`knowledge_base/playbooks/linux_*.md`). The OS is
+**auto-detected** at ingest, so the agent automatically uses the Linux (vs. Windows) playbook set.
+
+> **Memory:** a Linux RAM image needs a Volatility3 ISF built from the target's exact kernel
+> symbols (not auto-downloadable like Windows), so Linux memory is handled **manually** — the tool
+> POINTERs at the image rather than running `linux.*` plugins.
 
 ---
 
@@ -675,6 +704,10 @@ Parsers and features marked done are working and tested on real evidence.
 - [x] Collection-compatibility `check` command + `--artifact-map` layout adapter — incl. a
       ready-made map **validated on a real stock AChoirX (2026) collection** (all parsers run;
       new buckets `ASEP`/`PCA`/`Prf` cataloged + playbook-guided, read on demand)
+- [x] **Linux / Ubuntu AChoirX support** — `--artifact-map config/artifact_map.linux.yaml`;
+      parsers for auth/syslog, dpkg/apt, mactime bodyfile, running-process snapshot, and shell
+      history; OS auto-detected; Linux playbooks; validated end-to-end on a real Ubuntu collection
+      (Linux memory stays manual — needs a per-kernel Volatility ISF)
 - [x] Parallel multi-host runs (`run_hosts.py`, live-streamed) + CTF helpers (deterministic
       planted-flag scan via `find_flags`, verbatim-token answers, inline `--question`)
 - [x] Cross-host combined **answer sheet** + interactive **HTML dashboard** (search / filter /

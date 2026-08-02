@@ -18,7 +18,8 @@ python install.py                       # core tool + Volatility memory env
 
 # (per collection) sanity-check the layout BEFORE spending anything
 python main.py check "<FORENSICS>/ACQ-IR-<host>-<date>"
-#   stock AChoirX?  add:  --artifact-map config/artifact_map.stock.yaml
+#   stock AChoirX?      add:  --artifact-map config/artifact_map.stock.yaml
+#   Linux/Ubuntu host?  add:  --artifact-map config/artifact_map.linux.yaml   (add to EVERY command below)
 
 # parse ALL hosts once (fast, no AI), 4 at a time
 python run_hosts.py "<FORENSICS>/ACQ-IR-*" --ingest-only --jobs 4
@@ -94,6 +95,11 @@ and an API key with credit. Everything is pure-Python except the Volatility venv
    - Unknown dir-codes / `PARTIAL` → it's a different collector. Try
      `--artifact-map config/artifact_map.stock.yaml`; if still off, copy that YAML, rename the
      codes to match what `check` lists, and pass your new map everywhere with `--artifact-map`.
+   - **Linux/Ubuntu host** (`VarLog`, `Proc`, `Etc`, `Home` dir-codes) → use
+     `--artifact-map config/artifact_map.linux.yaml`, and **add that flag to every command below**
+     (`check`, `--ingest-only`, `investigate`, `run_hosts.py`). The tool auto-detects Linux and
+     uses Linux parsers (auth/syslog, dpkg/apt, bodyfile timeline, process snapshot, shell history)
+     + Linux playbooks. Linux **memory** is manual (needs a per-kernel Volatility ISF) → POINTER.
 
 ---
 

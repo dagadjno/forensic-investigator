@@ -14,11 +14,24 @@ from pathlib import Path
 from ..store.case_db import CaseDB
 from ..textutil import looks_text
 from ..ui import EMOJI, c
-from . import browser, evtx, lnk, psh, registry, srum, usn
+from . import (bodyfile, browser, evtx, lnk, packages, proc, psh, registry,
+               shell_history, srum, syslog, usn)
 
 # parser name (from artifact_map.yaml) -> module with parse(case, root, dir_code)
 PARSERS = {"psh": psh, "evtx": evtx, "registry": registry, "browser": browser,
-           "lnk": lnk, "usn": usn, "srum": srum}
+           "lnk": lnk, "usn": usn, "srum": srum,
+           # Linux parsers (see config/artifact_map.linux.yaml)
+           "syslog": syslog, "packages": packages, "bodyfile": bodyfile,
+           "shell_history": shell_history, "proc": proc}
+
+
+def _parser_names(spec: dict) -> list[str]:
+    """A bucket may declare one parser (`parser: usn`) or several (`parser: [syslog, packages]`
+    — e.g. Linux VarLog holds both auth/syslog logs and package logs). Normalize to a list."""
+    p = spec.get("parser")
+    if not p:
+        return []
+    return list(p) if isinstance(p, (list, tuple)) else [p]
 
 
 def _iso(ts: float) -> str:
@@ -28,7 +41,7 @@ def _iso(ts: float) -> str:
         return ""
 
 
-_USER_IN_PATH = re.compile(r"(?:^|/)Users/([^/]+)/", re.IGNORECASE)
+_USER_IN_PATH = re.compile(r"(?:^|/)(?:Users|home)/([^/]+)/", re.IGNORECASE)
 
 
 def _owner(rel: str) -> str:
@@ -53,9 +66,14 @@ def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
     root = Path(artifact_root)
     present = {p.name for p in root.iterdir() if p.is_dir()}
 
+    # OS family — drives which playbook set the sub-agent uses (Linux collections carry these
+    # buckets; Windows ones don't). Stored so the agent picks Linux vs Windows domain knowledge.
+    case.set_meta("os", "linux" if ({"VarLog", "Etc", "Home", "Svc"} & present) else "windows")
+
     # 1. Coverage manifest — graceful about absent buckets (e.g. namtsh01 has no Psh).
     for code, spec in artifact_map["artifacts"].items():
-        case.upsert_coverage(code, spec["type"], spec.get("parser"), code in present)
+        parser = ",".join(_parser_names(spec)) or None
+        case.upsert_coverage(code, spec["type"], parser, code in present)
 
     # 2. File-metadata catalog: every file under every present bucket.
     for code in present:
@@ -77,13 +95,15 @@ def ingest(case: CaseDB, artifact_root: str | Path, artifact_map: dict,
             )
     case.commit()
 
-    # 3. Run parsers for buckets that have one.
+    # 3. Run parsers for buckets that have one (a bucket may have several).
     for code, spec in artifact_map["artifacts"].items():
-        parser_name = spec.get("parser")
-        if parser_name and code in present and parser_name in PARSERS:
-            print(f"    {EMOJI['folder']} parsing {c(code, 'cyan', 'bold')} ({spec['type']}) ...",
-                  flush=True)
-            PARSERS[parser_name].parse(case, root, code)
+        if code not in present:
+            continue
+        for parser_name in _parser_names(spec):
+            if parser_name in PARSERS:
+                print(f"    {EMOJI['folder']} parsing {c(code, 'cyan', 'bold')} ({spec['type']}) "
+                      f"via {parser_name} ...", flush=True)
+                PARSERS[parser_name].parse(case, root, code)
     case.commit()
     case.set_meta("ingested", "1")
     return True

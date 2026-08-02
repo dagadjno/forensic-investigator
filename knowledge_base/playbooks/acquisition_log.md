@@ -20,9 +20,11 @@ The acquisition itself drops and runs DFIR tooling on the host, which then shows
 service installs (7045), process creation, prefetch, amcache, and the file catalog. When a
 question asks what the **attacker** installed/ran, **exclude the collector's own tools**:
 
-- **WinPmem** / `pmem` / `winpmem*.exe` / the `pmem` kernel driver — memory acquisition.
+- **WinPmem** / `pmem` / `winpmem*.exe` / the `pmem` kernel driver — memory acquisition (Windows).
+- **avml** (`*avml*`) — the Linux memory-acquisition tool (its binary copy appears under `RanProg`).
 - **AChoir / AChoirX** (`AChoir*.exe`, `Ach*.exe`) — the collection framework itself.
-- Bundled sysinternals/parsers the collector invokes during acquisition.
+- Bundled sysinternals / coreutils the collector invokes during acquisition (on Linux the collector
+  runs `ps`, `ss`, `lsof`, `find`, `dpkg`, etc. — their `RanProg` copies are collector activity).
 
 **Scope the exclusion by TIME, not just by name.** These run *during the acquisition window*
 (see the collection start time in this log) — typically well after the incident. A

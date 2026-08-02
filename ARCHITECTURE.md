@@ -295,6 +295,27 @@ front. `mft_lookup` resolves a filename/USN reference to its full path/MAC times
 `vol_run` runs a Volatility3 plugin against the memory image — each materializing only the rows it
 returns into `events`. See §6, on-demand tools.
 
+### Linux collections (same engine, different parsers)
+
+Only Layer A (parsers) and the playbooks are OS-specific; the rest of the pipeline is OS-agnostic.
+A Linux/Ubuntu AChoirX collection is handled by selecting `config/artifact_map.linux.yaml`
+(`--artifact-map`). Two mechanisms make this clean:
+
+- **A bucket may declare a *list* of parsers.** `ingest._parser_names(spec)` normalizes `parser:` to
+  a list, so Linux `VarLog` runs `[syslog, packages]` (auth/syslog logs *and* dpkg/apt logs live in
+  the same folder). Windows maps (single string) are unaffected.
+- **OS is auto-detected at ingest** (`meta.os = "linux"` when buckets like `VarLog`/`Etc`/`Home`/`Svc`
+  are present) and drives the playbook set (§5b).
+
+The Linux parsers follow the same contract (curate, read-by-name, summary+raw, stable locator):
+`syslog` (`source=syslog` — auth.log/syslog, ISO-8601 or legacy lines), `packages`
+(`source=package` — dpkg.log + apt history, incl. the apt command line), `bodyfile`
+(`source=filesystem` — curated Sleuthkit mactime timeline, with setuid/timestomp flags), `proc`
+(`source=process` — per-PID snapshot correlating cmdline + SHA-1 + a **deleted-executable** tell;
+NUL-separated `/proc/PID/cmdline` args are normalized to spaces), and `shell_history`
+(`source=shell_history` — `.bash_history`/`.zsh_history`). Linux **memory** is *not* wired to
+`vol_run` — a Linux image needs a per-kernel ISF, so it stays manual (POINTER at the image).
+
 ---
 
 ## 5. Layer B — the agent topology
@@ -347,6 +368,9 @@ tool output locally so the orchestrator never has to hold it — this keeps each
 - **Specialization is by playbook, not code.** For a coverage lead the sub-agent is told to
   `kb_read('playbooks/<bucket>.md')` first (the `_PLAYBOOKS` dir-code→doc map). The same code
   investigates PowerShell, registry, or memory — the playbook supplies the domain knowledge.
+  The map is **OS-aware**: `_playbooks_for(case)` returns the Linux dir-code→doc map (`linux_*.md`)
+  when `meta.os == "linux"`, and `_system()` offers the agent only that OS's playbooks — so a Linux
+  case gets Linux domain knowledge (persistence, auth.log, deleted-exe, bodyfile) instead of SRUM/EVTX.
 - **The loop** (up to `budgets.max_subagent_steps`, default 20):
   ```
   history = [task]

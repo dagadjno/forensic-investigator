@@ -1,0 +1,25 @@
+# Layout map for a LINUX / Ubuntu AChoirX collection (the cross-platform AChoirX collector).
+# Select it with `--artifact-map config/artifact_map.linux.yaml` on `check` and `investigate`.
+#
+# Validated against a real Ubuntu 24 AChoirX collection (ACQ-IR-baseline). The Linux collector
+# uses DIFFERENT dir-codes AND different content than the Windows one, so this is a separate map
+# (some codes — Conn/Proc/Sys/RanProg/MemDump — reuse the same name but hold Linux `.dat` text,
+# NOT the Windows binary artifacts, so their parser differs).
+#
+# parser: null = not (yet) parsed into the timeline, but the dir is still cataloged for coverage
+# + the file index, and every artifact here is plain text — so the agent reads it directly with
+# read_file / grep and cites it by line. Timeline parsers can be added incrementally.
+artifacts:
+  Cache:   { type: cache,             parser: null }              # app/thumbnail caches
+  Conn:    { type: network,           parser: null }              # ss / lsof / ip addr|route|link (.dat, agent-read)
+  Cron:    { type: cron,              parser: null }              # crontab + cron.{d,daily,…} (persistence, agent-read)
+  Disk:    { type: filesystem,        parser: bodyfile }          # bodyfile.dat (mactime) -> curated fs timeline
+  Etc:     { type: etc_config,        parser: null }              # /etc config files (passwd, fstab, ssh, …)
+  Fwl:     { type: firewall,          parser: null }              # iptables / ip6tables / ufw
+  Home:    { type: home,              parser: shell_history }     # dotfiles (agent-read) + .bash_history -> timeline
+  MemDump: { type: memory,            parser: null }              # RAM image (avml) — Linux Volatility is manual
+  Proc:    { type: process_listings,  parser: proc }              # ps/cmdline/hashes/deleted-exe -> process snapshot
+  RanProg: { type: running_binaries,  parser: null }              # ELF copies of running executables (hash/YARA)
+  Svc:     { type: services,          parser: null }              # systemd units / services / timers (agent-read)
+  Sys:     { type: sysinfo,           parser: null }              # uname / dpkg -l / dmesg / env / lsmod (.dat)
+  VarLog:  { type: var_log,           parser: [syslog, packages] } # auth/syslog + dpkg/apt -> timeline

@@ -75,6 +75,19 @@ _PLAYBOOKS = {"Psh": "powershell_history", "Evt": "event_logs", "Reg": "registry
               "Prf": "prefetch", "SYS": "srum", "ASEP": "amcache",
               "RanProg": "prefetch", "PCA": "pca"}
 
+# Linux dir-code -> playbook (used when the case's OS is linux; see config/artifact_map.linux.yaml).
+_PLAYBOOKS_LINUX = {"VarLog": "linux_logs", "Proc": "linux_processes",
+                    "Cron": "linux_persistence", "Svc": "linux_persistence",
+                    "Etc": "linux_persistence", "Home": "linux_home",
+                    "Disk": "linux_filesystem", "Conn": "linux_network",
+                    "Fwl": "linux_network", "Sys": "linux_sysinfo",
+                    "RanProg": "linux_binaries", "MemDump": "memory"}
+
+
+def _playbooks_for(case: CaseDB) -> dict:
+    """Windows or Linux dir-code->playbook map, per the case's detected OS."""
+    return _PLAYBOOKS_LINUX if case.get_meta("os") == "linux" else _PLAYBOOKS
+
 # Tools that count as "searching" — summarized into an auto-unresolved note if a question
 # lead ends without recording any answer.
 _SEARCH_TOOLS = {"query_timeline", "grep_artifact", "read_file", "list_files",
@@ -83,7 +96,12 @@ _SEARCH_TOOLS = {"query_timeline", "grep_artifact", "read_file", "list_files",
 
 def _system(case: CaseDB, host: str, kb_dir: Path) -> str:
     pb_dir = kb_dir / "playbooks"
-    pbs = sorted(p.stem for p in pb_dir.glob("*.md")) if pb_dir.is_dir() else []
+    allpb = sorted(p.stem for p in pb_dir.glob("*.md")) if pb_dir.is_dir() else []
+    # Show only the playbooks for this case's OS (Linux ones are `linux_*`; `memory` is shared).
+    if case.get_meta("os") == "linux":
+        pbs = [s for s in allpb if s.startswith("linux_") or s == "memory"]
+    else:
+        pbs = [s for s in allpb if not s.startswith("linux_")]
     pb_block = (f"\nAvailable playbooks (the ONLY ones — organized by ARTIFACT, not attack "
                 f"technique): kb_read('playbooks/<name>.md') where <name> is one of: "
                 f"{', '.join(pbs)}.\n") if pbs else ""
@@ -116,7 +134,7 @@ def run(llm: LLMClient, case: CaseDB, artifact_root: Path, kb_dir: Path,
     if lead["source"] == "coverage" and lead["artifact"]:
         task += (f"\nThis is a coverage lead for the '{lead['artifact']}' bucket. "
                  f"Examine it and call mark_examined('{lead['artifact']}') when done.")
-        pb = _PLAYBOOKS.get(lead["artifact"])
+        pb = _playbooks_for(case).get(lead["artifact"])
         if pb:
             task += f"\nStart by reading kb_read('playbooks/{pb}.md')."
     if lead["source"] == "question" and lead["question_id"]:
